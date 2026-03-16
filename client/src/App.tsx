@@ -13,6 +13,7 @@ import { getToolById } from '@/lib/tools-registry';
 import NotFound from '@/pages/not-found';
 import Home from '@/pages/home';
 import RailcutSizing from '@/pages/railcut-sizing';
+import CableSizing from '@/pages/cable-sizing';
 
 function PageTitle() {
   const [location] = useLocation();
@@ -30,6 +31,7 @@ function AppRouter() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/tools/railcut-sizing" component={RailcutSizing} />
+      <Route path="/tools/cable-sizing" component={CableSizing} />
       <Route component={NotFound} />
     </Switch>
   );
