@@ -23,17 +23,16 @@ export const tools: ToolDefinition[] = [
     category: 'power',
     status: 'active',
   },
-  // Future tools go here:
-  // {
-  //   id: 'cable-sizing',
-  //   name: 'Supply Cable Sizing Calculator',
-  //   shortName: 'Cable Sizing',
-  //   description: 'Calculate required cable cross-sections based on current, voltage drop, and derating factors.',
-  //   icon: Cable,
-  //   path: '/tools/cable-sizing',
-  //   category: 'power',
-  //   status: 'coming-soon',
-  // },
+  {
+    id: 'cable-sizing',
+    name: 'Power Section Layout & Cable Schedule',
+    shortName: 'Cable Schedule',
+    description: 'Calculate power section layout, cable sizing, and generate cable schedules for EHB monorail feed sections. IEC 60364-5-52 voltage drop and ampacity sizing with full BOM export.',
+    icon: Cable,
+    path: '/tools/cable-sizing',
+    category: 'power',
+    status: 'active',
+  },
 ];
 
 export function getToolById(id: string): ToolDefinition | undefined {
