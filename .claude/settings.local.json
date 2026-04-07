@@ -1,36 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(unzip -l sar-tools-claude-handoff.zip)",
-      "Bash(unzip -p sar-tools-claude-handoff.zip package.json)",
-      "Bash(unzip -l ./sar-tools-claude-handoff.zip)",
-      "Bash(unzip -p sar-tools-claude-handoff.zip CLAUDE.md)",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip package.json)",
-      "Bash(unzip -p sar-tools-claude-handoff.zip ARCHITECTURE.md)",
-      "Bash(unzip -p sar-tools-claude-handoff.zip client/src/App.tsx)",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip shared/schema.ts)",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip ARCHITECTURE.md)",
-      "Bash(grep -E \"^Archive|/$\")",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip client/src/App.tsx)",
-      "Bash(unzip -p sar-tools-claude-handoff.zip client/src/lib/data/fuse-data.ts)",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip client/src/lib/tools-registry.ts)",
-      "Bash(ls -lah /tmp/*.xlsx /tmp/**/*.xlsx)",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip client/src/lib/monorail-engine.ts)",
-      "Bash(unzip -p sar-tools-claude-handoff.zip client/src/lib/tools-registry.ts)",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip client/src/pages/railcut-sizing.tsx)",
-      "Bash(unzip -p sar-tools-claude-handoff.zip shared/schema.ts)",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip client/src/lib/data/fuse-data.ts)",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip CLAUDE.md)",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip client/src/components/tools/monorail/input-panel.tsx)",
-      "Bash(unzip -p ./sar-tools-claude-handoff.zip client/src/components/tools/monorail/export-button.tsx)",
-      "Bash(unzip -o sar-tools-claude-handoff.zip)",
-      "Bash(npm install:*)",
-      "Read(//c/Program Files/nodejs/**)",
-      "Bash(where npm:*)",
-      "Bash(npm --version)",
-      "mcp__Claude_Preview__preview_start",
-      "Bash(ls \"/c/Users/aba.SAR/Desktop/Co-Work/SAR Engineeering Tool Kit/node_modules/.bin/tsx\"*)",
-      "Bash(npx tsc:*)"
+      "Bash(*)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "mcp__Claude_Preview__*"
     ]
   }
 }

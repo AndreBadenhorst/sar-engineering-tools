@@ -5,7 +5,10 @@
       "name": "dev",
       "runtimeExecutable": "node",
       "runtimeArgs": ["./node_modules/tsx/dist/cli.mjs", "server/index.ts"],
-      "port": 5000
+      "port": 5000,
+      "env": {
+        "NODE_ENV": "development"
+      }
     }
   ]
 }

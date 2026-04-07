@@ -1,4 +1,4 @@
-import { Train, Calculator, Zap, Cable } from "lucide-react";
+import { Train, Calculator, Zap, Cable, CalendarDays, FolderKanban, Package, ScanBarcode } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface ToolDefinition {
@@ -21,6 +21,46 @@ export const tools: ToolDefinition[] = [
     icon: Train,
     path: '/tools/railcut-sizing',
     category: 'power',
+    status: 'active',
+  },
+  {
+    id: 'capacity-planner',
+    name: 'Capacity Planner',
+    shortName: 'Capacity',
+    description: 'Weekly team capacity planning — assign team members to projects by day with activity tracking.',
+    icon: CalendarDays,
+    path: '/tools/capacity-planner',
+    category: 'general',
+    status: 'active',
+  },
+  {
+    id: 'project-list',
+    name: 'Project List',
+    shortName: 'Projects',
+    description: 'View and manage all projects — filter by status, source, and search. Toggle active/inactive status.',
+    icon: FolderKanban,
+    path: '/tools/project-list',
+    category: 'general',
+    status: 'active',
+  },
+  {
+    id: 'inventory',
+    name: 'Inventory Manager',
+    shortName: 'Inventory',
+    description: 'Manage parts, stock levels, storage locations, and transaction history. Track reorder points and low stock alerts.',
+    icon: Package,
+    path: '/tools/inventory',
+    category: 'general',
+    status: 'active',
+  },
+  {
+    id: 'stock-booking',
+    name: 'Stock Booking',
+    shortName: 'Book Stock',
+    description: 'Mobile-friendly tool — book parts out of inventory, confirm shelf counts, and get low-stock reorder alerts.',
+    icon: ScanBarcode,
+    path: '/tools/stock-booking',
+    category: 'general',
     status: 'active',
   },
   // Future tools go here:

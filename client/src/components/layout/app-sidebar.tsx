@@ -1,7 +1,8 @@
 import { Link, useLocation } from 'wouter';
 import { Home } from 'lucide-react';
 import { tools } from '@/lib/tools-registry';
-import sarLogo from '@assets/sar-group-logo.jpg';
+import sarLogo from '@assets/sar-group-logo-blue.png';
+import sarLogoSquare from '@assets/sar-logo-square.png';
 import {
   Sidebar,
   SidebarContent,
@@ -28,12 +29,11 @@ export function AppSidebar() {
               alt="SAR Group"
               className="h-8 shrink-0 group-data-[collapsible=icon]:hidden"
             />
-            <div className="hidden group-data-[collapsible=icon]:flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-white font-bold text-[10px] shrink-0">
-              SAR
-            </div>
-            <div className="flex flex-col group-data-[collapsible=icon]:hidden">
-              <span className="text-xs text-muted-foreground">Engineering Tools</span>
-            </div>
+            <img
+              src={sarLogoSquare}
+              alt="SAR"
+              className="hidden group-data-[collapsible=icon]:flex h-8 w-8 shrink-0 rounded"
+            />
           </div>
         </Link>
       </SidebarHeader>

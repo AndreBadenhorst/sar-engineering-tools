@@ -13,6 +13,10 @@ import { getToolById } from '@/lib/tools-registry';
 import NotFound from '@/pages/not-found';
 import Home from '@/pages/home';
 import RailcutSizing from '@/pages/railcut-sizing';
+import CapacityPlanner from '@/pages/capacity-planner';
+import ProjectList from '@/pages/project-list';
+import Inventory from '@/pages/inventory';
+import StockBooking from '@/pages/stock-booking';
 
 function PageTitle() {
   const [location] = useLocation();
@@ -30,6 +34,10 @@ function AppRouter() {
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/tools/railcut-sizing" component={RailcutSizing} />
+      <Route path="/tools/capacity-planner" component={CapacityPlanner} />
+      <Route path="/tools/project-list" component={ProjectList} />
+      <Route path="/tools/inventory" component={Inventory} />
+      <Route path="/tools/stock-booking" component={StockBooking} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -4,3 +4,30 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Database (rebuild from seeds)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/backups/
+
+# Drizzle migrations
+drizzle/
+
+# Environment & secrets
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Archives
+*.zip
