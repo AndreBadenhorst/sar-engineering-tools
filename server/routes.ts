@@ -9,6 +9,7 @@ import inventoryRouter from "./routes/inventory";
 import storageLocationsRouter from "./routes/storage-locations";
 import locationsRouter from "./routes/locations";
 import holidaysRouter from "./routes/holidays";
+import qbSyncRouter from "./routes/qb-sync";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -23,6 +24,7 @@ export async function registerRoutes(
   app.use("/api/storage-locations", storageLocationsRouter);
   app.use("/api/locations", locationsRouter);
   app.use("/api/holidays", holidaysRouter);
+  app.use("/api/qb-sync", qbSyncRouter);
 
   return httpServer;
 }

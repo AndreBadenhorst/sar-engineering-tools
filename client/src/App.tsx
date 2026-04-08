@@ -60,7 +60,7 @@ function App() {
             <AppSidebar />
             <SidebarInset>
               <PageTitle />
-              <div className="flex-1 overflow-auto">
+              <div className="flex-1 overflow-auto min-h-0">
                 <AppRouter />
               </div>
               <BadenhorstAttribution />

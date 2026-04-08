@@ -1,9 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { addDays, format, startOfISOWeek, getISOWeek, isToday as isTodayFn } from "date-fns";
 import { ProjectAutocomplete } from "./project-autocomplete";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Save, Loader2, CopyCheck, MessageSquare, Moon, MapPin, Pencil } from "lucide-react";
+import { CopyCheck, MessageSquare, Moon, MapPin, Pencil } from "lucide-react";
 import {
   type CapacityEntry,
   type TeamMember,
@@ -37,6 +35,8 @@ interface WeeklyGridProps {
   activities: Activity[];
   locations: Location[];
   holidays: HolidayRecord[];
+  /** Called whenever dirty state changes, so parent can render Save in sticky header */
+  onDirtyChange?: (dirty: boolean, save: () => Promise<void>, saving: boolean) => void;
 }
 
 interface CellState {
@@ -238,7 +238,7 @@ function LocationPicker({
   );
 }
 
-export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locations, holidays: holidaysList }: WeeklyGridProps) {
+export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locations, holidays: holidaysList, onDirtyChange }: WeeklyGridProps) {
   const saveMutation = useSaveCapacity();
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
 
@@ -292,9 +292,13 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
   const multiWeek = weekStarts.length > 1;
 
   // Initialize grid state from entries
-  const [grid, setGrid] = useState<GridState>(() => {
+  // Track dirty cells in a ref so they survive across any number of grid rebuilds
+  // (e.g. when zooming from 1→2 weeks triggers multiple query resolves)
+  const dirtyCellsRef = useRef<GridState>({});
+
+  function buildGridFromEntries(serverEntries: CapacityEntry[]): GridState {
     const state: GridState = {};
-    for (const entry of entries) {
+    for (const entry of serverEntries) {
       const key = cellKey(entry.teamMemberId, entry.date);
       state[key] = {
         id: entry.id,
@@ -308,11 +312,16 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
         dirty: false,
       };
     }
+    // Overlay dirty (unsaved) cells
+    for (const [key, cell] of Object.entries(dirtyCellsRef.current)) {
+      state[key] = cell;
+    }
     return state;
-  });
+  }
 
-  // Re-sync when entries change (week navigation OR after save refetch)
-  // Include data fields in the key so edits to existing entries trigger a rebuild
+  const [grid, setGrid] = useState<GridState>(() => buildGridFromEntries(entries));
+
+  // Re-sync when entries change (week navigation, zoom, or after save refetch)
   const entriesKey = useMemo(
     () => entries.map((e) => `${e.id}:${e.projectId}:${e.activityId}:${e.locationId}:${e.comment}:${e.nightShift}`).join(","),
     [entries]
@@ -320,31 +329,7 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
   const [lastEntriesKey, setLastEntriesKey] = useState(entriesKey);
   if (entriesKey !== lastEntriesKey) {
     setLastEntriesKey(entriesKey);
-    setGrid((prev) => {
-      const state: GridState = {};
-      // First, load fresh server data
-      for (const entry of entries) {
-        const key = cellKey(entry.teamMemberId, entry.date);
-        state[key] = {
-          id: entry.id,
-          projectId: entry.projectId,
-          projectNumber: entry.projectNumber || "",
-          projectDescription: entry.projectDescription || "",
-          activityId: entry.activityId,
-          locationId: entry.locationId,
-          comment: entry.comment || "",
-          nightShift: !!entry.nightShift,
-          dirty: false,
-        };
-      }
-      // Then, overlay any dirty (unsaved) cells from the previous grid
-      for (const [key, cell] of Object.entries(prev)) {
-        if (cell.dirty) {
-          state[key] = cell;
-        }
-      }
-      return state;
-    });
+    setGrid(buildGridFromEntries(entries));
   }
 
   const getCell = useCallback(
@@ -359,7 +344,10 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
       setGrid((prev) => {
         const key = cellKey(memberId, date);
         const existing = prev[key] || emptyCell();
-        return { ...prev, [key]: { ...existing, ...updates, dirty: true } };
+        const updated = { ...existing, ...updates, dirty: true };
+        // Track in ref so it survives grid rebuilds (zoom, week nav)
+        dirtyCellsRef.current[key] = updated;
+        return { ...prev, [key]: updated };
       });
     },
     []
@@ -375,6 +363,15 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
     if (el) el.setAttribute("data-dirty", String(hasDirty));
   }, [hasDirty]);
 
+  // Expose save state to parent for sticky header button
+  const saveRef = useRef<() => Promise<void>>();
+  saveRef.current = handleSave;
+  const stableSave = useCallback(() => saveRef.current?.() ?? Promise.resolve(), []);
+
+  useEffect(() => {
+    onDirtyChange?.(hasDirty, stableSave, saveMutation.isPending);
+  }, [hasDirty, saveMutation.isPending, onDirtyChange, stableSave]);
+
   // ── Fill week: copy Monday's data to Tue-Fri ──
   function fillWeek(memberId: number, weekIndex: number) {
     const weekdays = weekdaysByWeek[weekIndex];
@@ -389,7 +386,7 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
         const key = cellKey(memberId, weekdays[i].date);
         const existing = next[key] || emptyCell();
         if (!existing.projectId && !existing.activityId && !existing.comment) {
-          next[key] = {
+          const filled = {
             ...existing,
             projectId: mondayCell.projectId,
             projectNumber: mondayCell.projectNumber,
@@ -400,6 +397,8 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
             nightShift: mondayCell.nightShift,
             dirty: true,
           };
+          next[key] = filled;
+          dirtyCellsRef.current[key] = filled;
         }
       }
       return next;
@@ -407,9 +406,11 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
   }
 
   async function handleSave() {
+    const dirtyKeys: string[] = [];
     const dirtyEntries = Object.entries(grid)
       .filter(([, cell]) => cell.dirty)
       .map(([key, cell]) => {
+        dirtyKeys.push(key);
         const [memberIdStr, date] = key.split(/-(.+)/);
         return {
           id: cell.id || undefined,
@@ -425,10 +426,32 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
 
     if (!dirtyEntries.length) return;
 
-    // Save to server — onSuccess invalidates queries, which triggers
-    // a refetch. The entriesKey re-sync will rebuild the grid with
-    // dirty: false from the fresh server data.
-    await saveMutation.mutateAsync(dirtyEntries);
+    const result = await saveMutation.mutateAsync(dirtyEntries);
+
+    // Clear dirty flags and update IDs for newly-created entries.
+    // We can't rely solely on the entriesKey re-sync because the refetched
+    // data may produce the same key (data matches what we just saved),
+    // so the grid wouldn't rebuild and dirty flags would persist.
+    const savedEntries: { id: number; teamMemberId: number; date: string }[] = result?.entries || [];
+    const idLookup = new Map(savedEntries.map((e) => [`${e.teamMemberId}-${e.date}`, e.id]));
+
+    // Clear the dirty ref — these cells are now saved
+    dirtyCellsRef.current = {};
+
+    setGrid((prev) => {
+      const next = { ...prev };
+      for (const key of dirtyKeys) {
+        if (next[key]) {
+          const serverId = idLookup.get(key);
+          next[key] = {
+            ...next[key],
+            dirty: false,
+            ...(serverId ? { id: serverId } : {}),
+          };
+        }
+      }
+      return next;
+    });
   }
 
   // Separate internal vs external members
@@ -437,17 +460,6 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
 
   return (
     <div className="space-y-3" id="capacity-grid-root" data-dirty={String(hasDirty)}>
-      {/* Save bar */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={!hasDirty || saveMutation.isPending} size="sm">
-          {saveMutation.isPending ? (
-            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4 mr-1.5" />
-          )}
-          Save Changes
-        </Button>
-      </div>
 
       <div className="overflow-auto border-2 border-border rounded-lg bg-card">
         <table className="w-full border-collapse">

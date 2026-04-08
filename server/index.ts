@@ -97,6 +97,15 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+
+      // Start QB Web Connector SOAP server (separate port)
+      try {
+        import("./qbwc/soap-server").then(({ startQBWebConnectorServer }) => {
+          startQBWebConnectorServer();
+        });
+      } catch (err: any) {
+        log(`QBWC server failed to start: ${err.message}`);
+      }
     },
   );
 })();

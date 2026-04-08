@@ -104,8 +104,12 @@ export function useMultiWeekCapacity(weekStarts: string[]) {
   const isLoading = queries.some((q) => q.isLoading);
   const isError = queries.some((q) => q.isError);
 
-  // Merge all week data: combine entries, deduplicate team members
-  const data = !isLoading && !isError
+  // Merge all week data: combine entries, deduplicate team members.
+  // Always return whatever data we have (even partial) so the grid
+  // never unmounts during zoom/navigation — that would destroy dirty state.
+  const hasAnyData = queries.some((q) => q.data);
+
+  const data = hasAnyData
     ? (() => {
         const allEntries: CapacityEntry[] = [];
         const memberMap = new Map<number, TeamMember>();

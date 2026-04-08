@@ -7,7 +7,7 @@ import { ChangelogPanel } from "@/components/tools/capacity/changelog-panel";
 import { ExportClipboard } from "@/components/tools/capacity/export-clipboard";
 import { SettingsPanel } from "@/components/tools/capacity/settings-panel";
 import { useMultiWeekCapacity, useActivities, useLocations, useHolidays, JOB_FUNCTIONS, type TeamMember } from "@/hooks/use-capacity";
-import { Loader2, Filter, X, ChevronDown, Check, ArrowUpDown } from "lucide-react";
+import { Loader2, Filter, X, ChevronDown, Check, ArrowUpDown, Save } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -95,6 +95,17 @@ export default function CapacityPlanner() {
     }
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
+
+  // Save state from grid (exposed via onDirtyChange callback)
+  const [gridDirty, setGridDirty] = useState(false);
+  const [gridSaving, setGridSaving] = useState(false);
+  const gridSaveRef = useRef<(() => Promise<void>) | null>(null);
+
+  const handleDirtyChange = useCallback((dirty: boolean, save: () => Promise<void>, saving: boolean) => {
+    setGridDirty(dirty);
+    setGridSaving(saving);
+    gridSaveRef.current = save;
   }, []);
 
   // Filters
@@ -200,7 +211,7 @@ export default function CapacityPlanner() {
   }, [multiWeekData, personSearch]);
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-0">
       {/* Unsaved changes dialog */}
       <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
         <AlertDialogContent>
@@ -220,32 +231,47 @@ export default function CapacityPlanner() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Top bar: week nav + actions */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <WeekSelector
-          currentDate={currentDate}
-          onWeekChange={safeNavigate}
-          weekCount={weekCount}
-          onWeekCountChange={setWeekCount}
-        />
-        <div className="flex items-center gap-2">
-          {multiWeekData && activities && holidaysList && (
-            <ExportClipboard
-              weekStarts={weekStarts}
-              entries={filteredEntries}
-              teamMembers={filteredMembers}
-              activities={activities}
-              holidays={holidaysList}
-            />
-          )}
-          <SettingsPanel />
-          <ChangelogPanel />
-          <TeamMemberDialog />
+      {/* ── Sticky header ── */}
+      <div className="sticky top-0 z-40 bg-background border-b border-border shadow-sm px-4 pt-4 pb-3 space-y-3">
+        {/* Top bar: week nav + actions */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <WeekSelector
+            currentDate={currentDate}
+            onWeekChange={safeNavigate}
+            weekCount={weekCount}
+            onWeekCountChange={setWeekCount}
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => gridSaveRef.current?.()}
+              disabled={!gridDirty || gridSaving}
+              size="sm"
+              className={gridDirty ? "bg-primary text-primary-foreground shadow-md" : ""}
+            >
+              {gridSaving ? (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-1.5" />
+              )}
+              Save
+            </Button>
+            {multiWeekData && activities && holidaysList && (
+              <ExportClipboard
+                weekStarts={weekStarts}
+                entries={filteredEntries}
+                teamMembers={filteredMembers}
+                activities={activities}
+                holidays={holidaysList}
+              />
+            )}
+            <SettingsPanel />
+            <ChangelogPanel />
+            <TeamMemberDialog />
+          </div>
         </div>
-      </div>
 
-      {/* Filters bar */}
-      <div className="flex items-center gap-3 flex-wrap">
+        {/* Filters bar */}
+        <div className="flex items-center gap-3 flex-wrap">
         <Filter className="h-4 w-4 text-muted-foreground" />
 
         {/* Multi-person select */}
@@ -356,43 +382,55 @@ export default function CapacityPlanner() {
         )}
       </div>
 
-      {/* Selected person badges */}
-      {selectedPersonIds.size > 0 && multiWeekData && (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {multiWeekData.teamMembers
-            .filter((m) => selectedPersonIds.has(m.id))
-            .map((m) => (
-              <Badge key={m.id} variant="secondary" className="text-xs pr-1">
-                {m.name}
-                <button
-                  className="ml-1 hover:text-foreground"
-                  onClick={() => togglePerson(m.id)}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            ))}
-        </div>
-      )}
+        {/* Selected person badges */}
+        {selectedPersonIds.size > 0 && multiWeekData && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {multiWeekData.teamMembers
+              .filter((m) => selectedPersonIds.has(m.id))
+              .map((m) => (
+                <Badge key={m.id} variant="secondary" className="text-xs pr-1">
+                  {m.name}
+                  <button
+                    className="ml-1 hover:text-foreground"
+                    onClick={() => togglePerson(m.id)}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+          </div>
+        )}
+      </div>
+      {/* ── End sticky header ── */}
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : multiWeekData && activities && locationsList && holidaysList ? (
-        <WeeklyGrid
-          weekStarts={weekStarts}
-          entries={filteredEntries}
-          teamMembers={filteredMembers}
-          activities={activities}
-          locations={locationsList}
-          holidays={holidaysList}
-        />
-      ) : (
-        <div className="text-center py-20 text-muted-foreground">
-          Failed to load data. Is the server running?
-        </div>
-      )}
+      {/* Grid content */}
+      <div className="px-4 pt-4 pb-4 relative">
+        {/* Loading overlay — shown on top of existing grid so it doesn't unmount */}
+        {isLoading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-[1px] rounded-lg">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        )}
+        {multiWeekData && activities && locationsList && holidaysList ? (
+          <WeeklyGrid
+            weekStarts={weekStarts}
+            entries={filteredEntries}
+            teamMembers={filteredMembers}
+            activities={activities}
+            locations={locationsList}
+            holidays={holidaysList}
+            onDirtyChange={handleDirtyChange}
+          />
+        ) : !isLoading ? (
+          <div className="text-center py-20 text-muted-foreground">
+            Failed to load data. Is the server running?
+          </div>
+        ) : (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
