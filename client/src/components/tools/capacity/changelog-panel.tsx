@@ -122,12 +122,12 @@ export function ChangelogPanel() {
       <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent className="w-[380px] sm:w-[420px] p-0 flex flex-col">
         <SheetHeader className="px-4 pt-4 pb-2 border-b shrink-0">
-          <SheetTitle className="flex items-center gap-2 text-base">
+          <SheetTitle className="flex items-center gap-2 text-base pr-6">
             <History className="h-4 w-4" />
             Change Log
             {total > 0 && (
               <Badge variant="secondary" className="text-[10px] ml-auto">
-                {total} changes
+                {total} {total === 1 ? "change" : "changes"}
               </Badge>
             )}
           </SheetTitle>

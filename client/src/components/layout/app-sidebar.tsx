@@ -1,11 +1,13 @@
 import { Link, useLocation } from 'wouter';
-import { Home } from 'lucide-react';
+import { Home, Info, Sun, Moon } from 'lucide-react';
 import { tools } from '@/lib/tools-registry';
+import { useTheme } from '@/hooks/use-theme';
 import sarLogo from '@assets/sar-group-logo-blue.png';
 import sarLogoSquare from '@assets/sar-logo-square.png';
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -15,6 +17,20 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from '@/components/ui/sidebar';
+
+function ThemeToggle() {
+  const { theme, toggle } = useTheme();
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton onClick={toggle} tooltip={theme === 'dark' ? 'Light mode' : 'Dark mode'}>
+          {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  );
+}
 
 export function AppSidebar() {
   const [location] = useLocation();
@@ -50,6 +66,14 @@ export function AppSidebar() {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={location === '/about'} tooltip="About">
+                  <Link href="/about">
+                    <Info className="h-4 w-4" />
+                    <span>About</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -79,6 +103,9 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter className="border-t border-sidebar-border">
+        <ThemeToggle />
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

@@ -8,7 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/app-sidebar';
 import { AppHeader } from '@/components/layout/app-header';
-import { PerplexityAttribution } from '@/components/PerplexityAttribution';
+import { BadenhorstAttribution } from '@/components/BadenhorstAttribution';
 import { getToolById } from '@/lib/tools-registry';
 import NotFound from '@/pages/not-found';
 import Home from '@/pages/home';
@@ -17,10 +17,12 @@ import CapacityPlanner from '@/pages/capacity-planner';
 import ProjectList from '@/pages/project-list';
 import Inventory from '@/pages/inventory';
 import StockBooking from '@/pages/stock-booking';
+import About from '@/pages/about';
 
 function PageTitle() {
   const [location] = useLocation();
   if (location === '/') return <AppHeader title="Engineering Tools" />;
+  if (location === '/about') return <AppHeader title="About" />;
   const match = location.match(/^\/tools\/(.+)$/);
   if (match) {
     const tool = getToolById(match[1]);
@@ -38,6 +40,7 @@ function AppRouter() {
       <Route path="/tools/project-list" component={ProjectList} />
       <Route path="/tools/inventory" component={Inventory} />
       <Route path="/tools/stock-booking" component={StockBooking} />
+      <Route path="/about" component={About} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -60,7 +63,7 @@ function App() {
               <div className="flex-1 overflow-auto">
                 <AppRouter />
               </div>
-              <PerplexityAttribution />
+              <BadenhorstAttribution />
             </SidebarInset>
           </SidebarProvider>
         </Router>

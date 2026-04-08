@@ -1,12 +1,13 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { startOfISOWeek, addWeeks, format } from "date-fns";
 import { WeekSelector } from "@/components/tools/capacity/week-selector";
 import { WeeklyGrid } from "@/components/tools/capacity/weekly-grid";
 import { TeamMemberDialog } from "@/components/tools/capacity/team-member-dialog";
 import { ChangelogPanel } from "@/components/tools/capacity/changelog-panel";
 import { ExportClipboard } from "@/components/tools/capacity/export-clipboard";
-import { useMultiWeekCapacity, useActivities, type TeamMember } from "@/hooks/use-capacity";
-import { Loader2, Filter, X, ChevronDown, Check } from "lucide-react";
+import { SettingsPanel } from "@/components/tools/capacity/settings-panel";
+import { useMultiWeekCapacity, useActivities, useLocations, useHolidays, JOB_FUNCTIONS, type TeamMember } from "@/hooks/use-capacity";
+import { Loader2, Filter, X, ChevronDown, Check, ArrowUpDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -81,25 +82,30 @@ export default function CapacityPlanner() {
 
   const { data: multiWeekData, isLoading: weekLoading } = useMultiWeekCapacity(weekStarts);
   const { data: activities, isLoading: activitiesLoading } = useActivities();
+  const { data: locationsList, isLoading: locationsLoading } = useLocations();
+  const { data: holidaysList, isLoading: holidaysLoading } = useHolidays();
+
+  // Browser-level unsaved changes warning (tab close / browser back)
+  useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (gridIsDirty()) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   // Filters
   const [selectedPersonIds, setSelectedPersonIds] = useState<Set<number>>(new Set());
   const [personSearch, setPersonSearch] = useState("");
   const [showExternal, setShowExternal] = useState<"all" | "internal" | "external">("all");
-  const [roleFilter, setRoleFilter] = useState("");
+  const [functionFilter, setFunctionFilter] = useState("");
   const [projectFilter, setProjectFilter] = useState("");
+  const [sortBy, setSortBy] = useState<"name" | "function">("name");
 
-  const isLoading = weekLoading || activitiesLoading;
-
-  // Get unique roles for the role filter dropdown
-  const availableRoles = useMemo(() => {
-    if (!multiWeekData) return [];
-    const roles = new Set<string>();
-    for (const m of multiWeekData.teamMembers) {
-      if (m.role) roles.add(m.role);
-    }
-    return Array.from(roles).sort();
-  }, [multiWeekData]);
+  const isLoading = weekLoading || activitiesLoading || locationsLoading || holidaysLoading;
 
   // Filter team members
   const filteredMembers = useMemo(() => {
@@ -116,8 +122,8 @@ export default function CapacityPlanner() {
       members = members.filter((m) => m.isExternal);
     }
 
-    if (roleFilter) {
-      members = members.filter((m) => m.role === roleFilter);
+    if (functionFilter) {
+      members = members.filter((m) => m.jobFunction === functionFilter);
     }
 
     if (projectFilter && multiWeekData.entries.length > 0) {
@@ -134,8 +140,18 @@ export default function CapacityPlanner() {
       members = members.filter((m) => memberIdsWithProject.has(m.id));
     }
 
+    // Sort
+    members = [...members].sort((a, b) => {
+      if (sortBy === "function") {
+        const fa = a.jobFunction || "zzz"; // push null to end
+        const fb = b.jobFunction || "zzz";
+        if (fa !== fb) return fa.localeCompare(fb);
+      }
+      return a.name.localeCompare(b.name);
+    });
+
     return members;
-  }, [multiWeekData, selectedPersonIds, showExternal, roleFilter, projectFilter]);
+  }, [multiWeekData, selectedPersonIds, showExternal, functionFilter, projectFilter, sortBy]);
 
   // Filter entries by project
   const filteredEntries = useMemo(() => {
@@ -151,13 +167,13 @@ export default function CapacityPlanner() {
   }, [multiWeekData, projectFilter]);
 
   const hasFilters =
-    selectedPersonIds.size > 0 || showExternal !== "all" || roleFilter || projectFilter;
+    selectedPersonIds.size > 0 || showExternal !== "all" || functionFilter || projectFilter;
 
   function clearFilters() {
     setSelectedPersonIds(new Set());
     setPersonSearch("");
     setShowExternal("all");
-    setRoleFilter("");
+    setFunctionFilter("");
     setProjectFilter("");
   }
 
@@ -178,7 +194,8 @@ export default function CapacityPlanner() {
         !q ||
         m.name.toLowerCase().includes(q) ||
         (m.company && m.company.toLowerCase().includes(q)) ||
-        (m.role && m.role.toLowerCase().includes(q))
+        (m.role && m.role.toLowerCase().includes(q)) ||
+        (m.jobFunction && m.jobFunction.toLowerCase().includes(q))
     );
   }, [multiWeekData, personSearch]);
 
@@ -212,14 +229,16 @@ export default function CapacityPlanner() {
           onWeekCountChange={setWeekCount}
         />
         <div className="flex items-center gap-2">
-          {multiWeekData && activities && (
+          {multiWeekData && activities && holidaysList && (
             <ExportClipboard
               weekStarts={weekStarts}
               entries={filteredEntries}
               teamMembers={filteredMembers}
               activities={activities}
+              holidays={holidaysList}
             />
           )}
+          <SettingsPanel />
           <ChangelogPanel />
           <TeamMemberDialog />
         </div>
@@ -258,9 +277,9 @@ export default function CapacityPlanner() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="truncate">{m.name}</div>
-                    {(m.role || m.company) && (
+                    {(m.jobFunction || m.company) && (
                       <div className="text-xs text-muted-foreground truncate">
-                        {[m.role, m.company].filter(Boolean).join(" · ")}
+                        {[m.jobFunction, m.company].filter(Boolean).join(" · ")}
                       </div>
                     )}
                   </div>
@@ -291,24 +310,20 @@ export default function CapacityPlanner() {
           </SelectContent>
         </Select>
 
-        {availableRoles.length > 0 && (
-          <Select
-            value={roleFilter || "__all__"}
-            onValueChange={(v) => setRoleFilter(v === "__all__" ? "" : v)}
-          >
-            <SelectTrigger className="h-8 w-[150px] text-sm">
-              <SelectValue placeholder="Filter by role..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All Roles</SelectItem>
-              {availableRoles.map((r) => (
-                <SelectItem key={r} value={r}>
-                  {r}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <Select
+          value={functionFilter || "__all__"}
+          onValueChange={(v) => setFunctionFilter(v === "__all__" ? "" : v)}
+        >
+          <SelectTrigger className="h-8 w-[170px] text-sm">
+            <SelectValue placeholder="All Functions" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Functions</SelectItem>
+            {JOB_FUNCTIONS.map((fn) => (
+              <SelectItem key={fn} value={fn}>{fn}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         <Input
           value={projectFilter}
@@ -316,6 +331,17 @@ export default function CapacityPlanner() {
           placeholder="Filter by project..."
           className="h-8 w-[180px] text-sm"
         />
+
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as "name" | "function")}>
+          <SelectTrigger className="h-8 w-[150px] text-sm">
+            <ArrowUpDown className="h-3 w-3 mr-1.5 opacity-50" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name">Sort by Name</SelectItem>
+            <SelectItem value="function">Sort by Function</SelectItem>
+          </SelectContent>
+        </Select>
 
         {hasFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 px-2">
@@ -353,12 +379,14 @@ export default function CapacityPlanner() {
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : multiWeekData && activities ? (
+      ) : multiWeekData && activities && locationsList && holidaysList ? (
         <WeeklyGrid
           weekStarts={weekStarts}
           entries={filteredEntries}
           teamMembers={filteredMembers}
           activities={activities}
+          locations={locationsList}
+          holidays={holidaysList}
         />
       ) : (
         <div className="text-center py-20 text-muted-foreground">

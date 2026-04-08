@@ -1,12 +1,11 @@
-import { useState } from "react";
-import { useCreateTeamMember, JOB_FUNCTIONS, type TeamMember } from "@/hooks/use-capacity";
+import { useState, useEffect } from "react";
+import { type TeamMember, JOB_FUNCTIONS, useUpdateTeamMember } from "@/hooks/use-capacity";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -18,10 +17,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { UserPlus } from "lucide-react";
 
-export function TeamMemberDialog() {
-  const [open, setOpen] = useState(false);
+interface MemberEditDialogProps {
+  member: TeamMember | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function MemberEditDialog({ member, open, onOpenChange }: MemberEditDialogProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
@@ -30,23 +33,26 @@ export function TeamMemberDialog() {
   const [isExternal, setIsExternal] = useState(false);
   const [company, setCompany] = useState("");
 
-  const createMember = useCreateTeamMember();
+  const updateMember = useUpdateTeamMember();
 
-  function reset() {
-    setName("");
-    setEmail("");
-    setRole("");
-    setJobFunction("");
-    setDepartment("");
-    setIsExternal(false);
-    setCompany("");
-  }
+  useEffect(() => {
+    if (member) {
+      setName(member.name);
+      setEmail(member.email || "");
+      setRole(member.role || "");
+      setJobFunction(member.jobFunction || "");
+      setDepartment(member.department || "");
+      setIsExternal(member.isExternal);
+      setCompany(member.company || "");
+    }
+  }, [member]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!member || !name.trim()) return;
 
-    await createMember.mutateAsync({
+    await updateMember.mutateAsync({
+      id: member.id,
       name: name.trim(),
       email: email.trim() || null,
       role: role.trim() || null,
@@ -54,39 +60,26 @@ export function TeamMemberDialog() {
       department: department.trim() || null,
       isExternal,
       company: isExternal ? company.trim() || null : null,
-      source: "manual",
-      active: true,
     });
 
-    reset();
-    setOpen(false);
+    onOpenChange(false);
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <UserPlus className="h-4 w-4 mr-1.5" />
-          Add Member
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add Team Member</DialogTitle>
+          <DialogTitle>Edit Team Member</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Name *</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+            <Label htmlFor="edit-name">Name *</Label>
+            <Input id="edit-name" value={name} onChange={(e) => setName(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="jobFunction">Function</Label>
+            <Label htmlFor="edit-fn">Function</Label>
             <Select value={jobFunction || "__none__"} onValueChange={(v) => setJobFunction(v === "__none__" ? "" : v)}>
-              <SelectTrigger id="jobFunction">
+              <SelectTrigger id="edit-fn">
                 <SelectValue placeholder="Select function..." />
               </SelectTrigger>
               <SelectContent>
@@ -97,34 +90,38 @@ export function TeamMemberDialog() {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-email">Email</Label>
+            <Input id="edit-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="role">Role / Title</Label>
-              <Input id="role" value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Senior, Lead" />
+              <Label htmlFor="edit-role">Role / Title</Label>
+              <Input id="edit-role" value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Senior, Lead" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="department">Department</Label>
-              <Input id="department" value={department} onChange={(e) => setDepartment(e.target.value)} />
+              <Label htmlFor="edit-dept">Department</Label>
+              <Input id="edit-dept" value={department} onChange={(e) => setDepartment(e.target.value)} />
             </div>
           </div>
           <div className="flex items-center gap-2">
             <Checkbox
-              id="external"
+              id="edit-external"
               checked={isExternal}
               onCheckedChange={(checked) => setIsExternal(checked === true)}
             />
-            <Label htmlFor="external">External subcontractor</Label>
+            <Label htmlFor="edit-external">External subcontractor</Label>
           </div>
           {isExternal && (
             <div className="space-y-2">
-              <Label htmlFor="company">Company</Label>
-              <Input id="company" value={company} onChange={(e) => setCompany(e.target.value)} placeholder="e.g. ISG, Guest Software" />
+              <Label htmlFor="edit-company">Company</Label>
+              <Input id="edit-company" value={company} onChange={(e) => setCompany(e.target.value)} placeholder="e.g. ISG, Guest Software" />
             </div>
           )}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={createMember.isPending}>
-              {createMember.isPending ? "Adding..." : "Add Member"}
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={updateMember.isPending}>
+              {updateMember.isPending ? "Saving..." : "Save"}
             </Button>
           </div>
         </form>

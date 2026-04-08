@@ -2,11 +2,21 @@ import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/rea
 import { apiRequest } from "@/lib/queryClient";
 
 // ── Types ─────────────────────────────────────────────────────
+export const JOB_FUNCTIONS = [
+  "Controls Engineer",
+  "Hardware Planner",
+  "Technician",
+  "Site Manager",
+  "Project Manager",
+] as const;
+export type JobFunction = (typeof JOB_FUNCTIONS)[number];
+
 export interface TeamMember {
   id: number;
   name: string;
   email: string | null;
   role: string | null;
+  jobFunction: JobFunction | null;
   department: string | null;
   source: "manual" | "exchange";
   isExternal: boolean;
@@ -44,11 +54,19 @@ export interface Activity {
   sortOrder: number;
 }
 
+export interface Location {
+  id: number;
+  name: string;
+  shortCode: string | null;
+  active: boolean;
+}
+
 export interface CapacityEntry {
   id: number;
   teamMemberId: number;
   projectId: number | null;
   activityId: number | null;
+  locationId: number | null;
   date: string;
   comment: string | null;
   nightShift: boolean;
@@ -56,6 +74,7 @@ export interface CapacityEntry {
   projectNumber: string | null;
   projectDescription: string | null;
   activityName: string | null;
+  locationName: string | null;
 }
 
 export interface WeekData {
@@ -124,6 +143,95 @@ export function useActivities() {
   });
 }
 
+// ── Holiday types & hooks ───────────────────────────────────
+
+export interface HolidayRecord {
+  id: number;
+  date: string;
+  name: string;
+  nameLocal: string | null;
+  category: "us_federal" | "german" | "company";
+  active: boolean;
+}
+
+export function useHolidays() {
+  return useQuery<HolidayRecord[]>({
+    queryKey: ["/api/holidays"],
+  });
+}
+
+export function useCreateHoliday() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { date: string; name: string; nameLocal?: string; category: string }) => {
+      const res = await apiRequest("POST", "/api/holidays", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
+    },
+  });
+}
+
+export function useUpdateHoliday() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: number } & Partial<HolidayRecord>) => {
+      const res = await apiRequest("PUT", `/api/holidays/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
+    },
+  });
+}
+
+export function useDeleteHoliday() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/holidays/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/holidays"] });
+    },
+  });
+}
+
+export function useLocations() {
+  return useQuery<Location[]>({
+    queryKey: ["/api/locations"],
+  });
+}
+
+export function useCreateLocation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { name: string; shortCode?: string }) => {
+      const res = await apiRequest("POST", "/api/locations", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/locations"] });
+    },
+  });
+}
+
+export function useDeleteLocation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/locations/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/locations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/capacity"] });
+    },
+  });
+}
+
 export function useProjectSearch(query: string) {
   return useQuery<Project[]>({
     queryKey: ["/api/projects/search", `?q=${encodeURIComponent(query)}`],
@@ -138,9 +246,12 @@ export function useSaveCapacity() {
       const res = await apiRequest("PUT", "/api/capacity/bulk", { entries });
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/capacity"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/capacity/changelog"] });
+    onSuccess: async () => {
+      // Await both invalidations so the grid re-syncs from fresh data before the mutation resolves
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["/api/capacity"] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/capacity/changelog"] }),
+      ]);
     },
   });
 }

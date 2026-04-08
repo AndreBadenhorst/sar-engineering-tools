@@ -1,14 +1,15 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "../db";
-import { capacityEntries, capacityChangelog, teamMembers, projects, activities } from "@shared/schema";
+import { capacityEntries, capacityChangelog, teamMembers, projects, activities, locations } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
 
 const router = Router();
 
 // ── Helper: resolve display names for changelog ──────────────
-async function resolveNames(projectId: number | null, activityId: number | null) {
+async function resolveNames(projectId: number | null, activityId: number | null, locationId?: number | null) {
   let projectNumber: string | null = null;
   let activityName: string | null = null;
+  let locationName: string | null = null;
 
   if (projectId) {
     const p = await db.select({ number: projects.number }).from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -18,7 +19,11 @@ async function resolveNames(projectId: number | null, activityId: number | null)
     const a = await db.select({ name: activities.name }).from(activities).where(eq(activities.id, activityId)).limit(1);
     if (a.length) activityName = a[0].name;
   }
-  return { projectNumber, activityName };
+  if (locationId) {
+    const l = await db.select({ name: locations.name }).from(locations).where(eq(locations.id, locationId)).limit(1);
+    if (l.length) locationName = l[0].name;
+  }
+  return { projectNumber, activityName, locationName };
 }
 
 // ── Helper: log a change ─────────────────────────────────────
@@ -66,6 +71,7 @@ router.get("/", async (req: Request, res: Response) => {
       teamMemberId: capacityEntries.teamMemberId,
       projectId: capacityEntries.projectId,
       activityId: capacityEntries.activityId,
+      locationId: capacityEntries.locationId,
       date: capacityEntries.date,
       comment: capacityEntries.comment,
       nightShift: capacityEntries.nightShift,
@@ -73,11 +79,13 @@ router.get("/", async (req: Request, res: Response) => {
       projectNumber: projects.number,
       projectDescription: projects.description,
       activityName: activities.name,
+      locationName: locations.name,
     })
     .from(capacityEntries)
     .leftJoin(teamMembers, eq(capacityEntries.teamMemberId, teamMembers.id))
     .leftJoin(projects, eq(capacityEntries.projectId, projects.id))
     .leftJoin(activities, eq(capacityEntries.activityId, activities.id))
+    .leftJoin(locations, eq(capacityEntries.locationId, locations.id))
     .where(
       and(
         gte(capacityEntries.date, weekStart),
@@ -94,7 +102,7 @@ router.get("/", async (req: Request, res: Response) => {
 
 // POST /api/capacity
 router.post("/", async (req: Request, res: Response) => {
-  const { teamMemberId, projectId, activityId, date, comment, nightShift } = req.body;
+  const { teamMemberId, projectId, activityId, locationId, date, comment, nightShift } = req.body;
   if (!teamMemberId || !date) {
     return res.status(400).json({ message: "teamMemberId and date are required" });
   }
@@ -103,13 +111,14 @@ router.post("/", async (req: Request, res: Response) => {
     teamMemberId,
     projectId: projectId || null,
     activityId: activityId || null,
+    locationId: locationId || null,
     date,
     comment: comment || null,
     nightShift: nightShift || false,
   }).returning();
 
   const entry = result[0];
-  const names = await resolveNames(entry.projectId, entry.activityId);
+  const names = await resolveNames(entry.projectId, entry.activityId, entry.locationId);
   const memberRow = await db.select({ name: teamMembers.name }).from(teamMembers).where(eq(teamMembers.id, teamMemberId)).limit(1);
   const memberName = memberRow[0]?.name || `#${teamMemberId}`;
 
@@ -118,7 +127,7 @@ router.post("/", async (req: Request, res: Response) => {
     teamMemberId,
     date,
     action: "create",
-    summary: `Created entry for ${memberName} on ${date}${names.projectNumber ? ` — ${names.projectNumber}` : ""}${names.activityName ? ` / ${names.activityName}` : ""}`,
+    summary: `Created entry for ${memberName} on ${date}${names.projectNumber ? ` — ${names.projectNumber}` : ""}${names.activityName ? ` / ${names.activityName}` : ""}${names.locationName ? ` @ ${names.locationName}` : ""}`,
   });
 
   res.status(201).json(entry);
@@ -151,6 +160,7 @@ router.put("/bulk", async (req: Request, res: Response) => {
         .set({
           projectId: entry.projectId || null,
           activityId: entry.activityId || null,
+          locationId: entry.locationId || null,
           comment: entry.comment || null,
           nightShift: entry.nightShift ?? false,
           updatedAt: sql`datetime('now')`,
@@ -198,6 +208,22 @@ router.put("/bulk", async (req: Request, res: Response) => {
             });
           }
 
+          if ((entry.locationId || null) !== old.locationId) {
+            const oldNames = await resolveNames(null, null, old.locationId);
+            const newNames = await resolveNames(null, null, entry.locationId || null);
+            changes.push(`location: ${oldNames.locationName || "—"} → ${newNames.locationName || "—"}`);
+            await logChange({
+              entryId: entry.id,
+              teamMemberId: old.teamMemberId,
+              date: old.date,
+              action: "update",
+              field: "location",
+              oldValue: oldNames.locationName,
+              newValue: newNames.locationName,
+              summary: `${memberName} ${old.date} — location: ${oldNames.locationName || "—"} → ${newNames.locationName || "—"}`,
+            });
+          }
+
           if ((entry.comment || null) !== old.comment) {
             await logChange({
               entryId: entry.id,
@@ -233,6 +259,7 @@ router.put("/bulk", async (req: Request, res: Response) => {
         teamMemberId: entry.teamMemberId,
         projectId: entry.projectId || null,
         activityId: entry.activityId || null,
+        locationId: entry.locationId || null,
         date: entry.date,
         comment: entry.comment || null,
         nightShift: entry.nightShift ?? false,
@@ -242,14 +269,14 @@ router.put("/bulk", async (req: Request, res: Response) => {
       results.push(newEntry);
 
       const memberName = memberNames.get(entry.teamMemberId) || `#${entry.teamMemberId}`;
-      const names = await resolveNames(entry.projectId || null, entry.activityId || null);
+      const names = await resolveNames(entry.projectId || null, entry.activityId || null, entry.locationId || null);
 
       await logChange({
         entryId: newEntry.id,
         teamMemberId: entry.teamMemberId,
         date: entry.date,
         action: "create",
-        summary: `Created ${memberName} on ${entry.date}${names.projectNumber ? ` — ${names.projectNumber}` : ""}${names.activityName ? ` / ${names.activityName}` : ""}`,
+        summary: `Created ${memberName} on ${entry.date}${names.projectNumber ? ` — ${names.projectNumber}` : ""}${names.activityName ? ` / ${names.activityName}` : ""}${names.locationName ? ` @ ${names.locationName}` : ""}`,
       });
     }
   }
@@ -260,7 +287,7 @@ router.put("/bulk", async (req: Request, res: Response) => {
 // PUT /api/capacity/:id
 router.put("/:id", async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const { projectId, activityId, comment, nightShift } = req.body;
+  const { projectId, activityId, locationId, comment, nightShift } = req.body;
 
   const oldRows = await db.select().from(capacityEntries).where(eq(capacityEntries.id, id)).limit(1);
   if (!oldRows.length) return res.status(404).json({ message: "Not found" });
@@ -270,6 +297,7 @@ router.put("/:id", async (req: Request, res: Response) => {
     .set({
       ...(projectId !== undefined && { projectId }),
       ...(activityId !== undefined && { activityId }),
+      ...(locationId !== undefined && { locationId }),
       ...(comment !== undefined && { comment }),
       ...(nightShift !== undefined && { nightShift }),
       updatedAt: sql`datetime('now')`,
@@ -298,6 +326,15 @@ router.put("/:id", async (req: Request, res: Response) => {
       entryId: id, teamMemberId: old.teamMemberId, date: old.date, action: "update",
       field: "activity", oldValue: oldNames.activityName, newValue: newNames.activityName,
       summary: `${memberName} ${old.date} — activity: ${oldNames.activityName || "—"} → ${newNames.activityName || "—"}`,
+    });
+  }
+  if (locationId !== undefined && locationId !== old.locationId) {
+    const oldNames = await resolveNames(null, null, old.locationId);
+    const newNames = await resolveNames(null, null, locationId);
+    await logChange({
+      entryId: id, teamMemberId: old.teamMemberId, date: old.date, action: "update",
+      field: "location", oldValue: oldNames.locationName, newValue: newNames.locationName,
+      summary: `${memberName} ${old.date} — location: ${oldNames.locationName || "—"} → ${newNames.locationName || "—"}`,
     });
   }
   if (comment !== undefined && comment !== old.comment) {

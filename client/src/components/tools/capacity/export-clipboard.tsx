@@ -11,14 +11,15 @@ import {
   type CapacityEntry,
   type TeamMember,
   type Activity,
+  type HolidayRecord,
 } from "@/hooks/use-capacity";
-import { holidayMap, type Holiday } from "@shared/holidays";
 
 interface ExportClipboardProps {
   weekStarts: string[];
   entries: CapacityEntry[];
   teamMembers: TeamMember[];
   activities: Activity[];
+  holidays: HolidayRecord[];
 }
 
 interface DayCol {
@@ -27,17 +28,16 @@ interface DayCol {
   dayNum: string;
   isWeekend: boolean;
   cwNum: number;
-  holiday: Holiday | null;
+  holiday: HolidayRecord | null;
 }
 
-function buildDays(weekStarts: string[]): DayCol[] {
-  const yearSet = new Set<number>();
-  for (const ws of weekStarts) {
-    const y = new Date(ws + "T00:00:00").getFullYear();
-    yearSet.add(y);
-    yearSet.add(y + 1);
+function buildDays(weekStarts: string[], holidays: HolidayRecord[]): DayCol[] {
+  const holidayLookup = new Map<string, HolidayRecord>();
+  for (const h of holidays) {
+    if (h.active && !holidayLookup.has(h.date)) {
+      holidayLookup.set(h.date, h);
+    }
   }
-  const holidays = holidayMap(Array.from(yearSet));
   const days: DayCol[] = [];
 
   for (const ws of weekStarts) {
@@ -58,7 +58,7 @@ function buildDays(weekStarts: string[]): DayCol[] {
         dayNum: String(d.getDate()).padStart(2, "0"),
         isWeekend: i >= 5,
         cwNum: getISOWeek(d),
-        holiday: holidays.get(dateStr) || null,
+        holiday: holidayLookup.get(dateStr) || null,
       });
     }
   }
@@ -125,7 +125,7 @@ function generateHTML(
     const isHoliday = !!day.holiday;
     const bg = isHoliday ? holidayBg : headerBg;
     const holidayLabel = day.holiday
-      ? `<br><span style="font-size:9px;font-weight:normal;">${day.holiday.country === "DE" ? (day.holiday.nameDE || day.holiday.name) : day.holiday.name}</span>`
+      ? `<br><span style="font-size:9px;font-weight:normal;">${day.holiday.category === "german" && day.holiday.nameLocal ? day.holiday.nameLocal : day.holiday.name}</span>`
       : "";
     html += `<th style="${borderStyle}${bg}text-align:center;min-width:100px;">${day.label} ${day.dayNum}${holidayLabel}</th>`;
   }
@@ -159,6 +159,9 @@ function generateHTML(
       if (isNight) {
         parts.push(`<span style="font-size:9px;">🌙 Night Shift</span>`);
       }
+      if ((entry as any)?.locationName) {
+        parts.push(`<span style="font-size:10px;color:#34d399;">📍 ${(entry as any).locationName}</span>`);
+      }
       if (entry?.comment) {
         parts.push(`<span style="font-size:10px;color:#9ca3af;font-style:italic;">${entry.comment}</span>`);
       }
@@ -172,7 +175,7 @@ function generateHTML(
   return html;
 }
 
-export function ExportClipboard({ weekStarts, entries, teamMembers, activities }: ExportClipboardProps) {
+export function ExportClipboard({ weekStarts, entries, teamMembers, activities, holidays }: ExportClipboardProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [weekdaysOnly, setWeekdaysOnly] = useState(true);
@@ -189,7 +192,7 @@ export function ExportClipboard({ weekStarts, entries, teamMembers, activities }
     setSelectedMembers(new Set(teamMembers.map((m) => m.id)));
   }
 
-  const days = buildDays(weekStarts);
+  const days = buildDays(weekStarts, holidays);
   const internal = teamMembers.filter((m) => !m.isExternal);
   const external = teamMembers.filter((m) => m.isExternal);
 
@@ -250,7 +253,7 @@ export function ExportClipboard({ weekStarts, entries, teamMembers, activities }
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent className="w-[90vw] sm:w-[800px] sm:max-w-[800px] p-0 flex flex-col">
           <SheetHeader className="px-4 pt-4 pb-2 border-b shrink-0">
-            <SheetTitle className="flex items-center gap-2 text-base">
+            <SheetTitle className="flex items-center gap-2 text-base pr-6">
               <ClipboardCopy className="h-4 w-4" />
               Export for Outlook
             </SheetTitle>

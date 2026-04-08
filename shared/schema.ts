@@ -1,12 +1,23 @@
 import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
+// ── Job Function enum ────────────────────────────────────────
+export const JOB_FUNCTIONS = [
+  "Controls Engineer",
+  "Hardware Planner",
+  "Technician",
+  "Site Manager",
+  "Project Manager",
+] as const;
+export type JobFunction = (typeof JOB_FUNCTIONS)[number];
+
 // ── Team Members ──────────────────────────────────────────────
 export const teamMembers = sqliteTable("team_members", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   email: text("email"),
   role: text("role"),
+  jobFunction: text("job_function"),
   department: text("department"),
   source: text("source", { enum: ["manual", "exchange"] }).notNull().default("manual"),
   isExternal: integer("is_external", { mode: "boolean" }).notNull().default(false),
@@ -37,7 +48,7 @@ export const projects = sqliteTable("projects", {
   projectedEnd: text("projected_end"),     // YYYY-MM-DD
   endDate: text("end_date"),               // YYYY-MM-DD
   // ── system fields ────────────────────────
-  source: text("source", { enum: ["qb_sync", "manual"] }).notNull().default("manual"),
+  source: text("source", { enum: ["qb_sync", "manual", "sales_list", "gmbh_gun"] }).notNull().default("manual"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
@@ -50,12 +61,33 @@ export const activities = sqliteTable("activities", {
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
+// ── Holidays (editable — US Federal, German, Company) ────────
+export const holidays = sqliteTable("holidays", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  date: text("date").notNull(),                  // YYYY-MM-DD
+  name: text("name").notNull(),                  // English name
+  nameLocal: text("name_local"),                 // Local name (e.g. German)
+  category: text("category", { enum: ["us_federal", "german", "company"] }).notNull(),
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+});
+
+// ── Work Locations (job sites, customer offices, etc.) ───────
+export const locations = sqliteTable("locations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),         // e.g. "Dallas TX", "SAR Office", "Customer Site"
+  shortCode: text("short_code"),                 // optional short label e.g. "DAL", "HQ"
+  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+});
+
 // ── Capacity Entries ──────────────────────────────────────────
 export const capacityEntries = sqliteTable("capacity_entries", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   teamMemberId: integer("team_member_id").notNull().references(() => teamMembers.id, { onDelete: "cascade" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   activityId: integer("activity_id").references(() => activities.id, { onDelete: "set null" }),
+  locationId: integer("location_id").references(() => locations.id, { onDelete: "set null" }),
   date: text("date").notNull(), // YYYY-MM-DD
   comment: text("comment"),
   nightShift: integer("night_shift", { mode: "boolean" }).notNull().default(false),

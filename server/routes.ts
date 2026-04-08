@@ -7,6 +7,8 @@ import capacityRouter from "./routes/capacity";
 import partsRouter from "./routes/parts";
 import inventoryRouter from "./routes/inventory";
 import storageLocationsRouter from "./routes/storage-locations";
+import locationsRouter from "./routes/locations";
+import holidaysRouter from "./routes/holidays";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -19,6 +21,8 @@ export async function registerRoutes(
   app.use("/api/parts", partsRouter);
   app.use("/api/inventory", inventoryRouter);
   app.use("/api/storage-locations", storageLocationsRouter);
+  app.use("/api/locations", locationsRouter);
+  app.use("/api/holidays", holidaysRouter);
 
   return httpServer;
 }

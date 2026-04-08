@@ -201,6 +201,7 @@ npx tsx server/migrate-changelog.ts   # Changelog table + indexes
 9. **Financial values in cents** (integer) — no floats for money
 10. **Projects: active-only search** in capacity planner autocomplete
 11. **QB is the source of truth** for projects — source field tracks origin
+12. **Dates: store YYYY-MM-DD, display MM/DD/YYYY** — US locale. All user-facing dates must be formatted MM/DD/YYYY. Database and API always use ISO YYYY-MM-DD internally.
 
 ---
 

@@ -20,13 +20,14 @@ router.get("/:id", async (req: Request, res: Response) => {
 
 // POST /api/team-members
 router.post("/", async (req: Request, res: Response) => {
-  const { name, email, role, department, source, isExternal, company } = req.body;
+  const { name, email, role, jobFunction, department, source, isExternal, company } = req.body;
   if (!name) return res.status(400).json({ message: "Name is required" });
 
   const result = await db.insert(teamMembers).values({
     name,
     email: email || null,
     role: role || null,
+    jobFunction: jobFunction || null,
     department: department || null,
     source: source || "manual",
     isExternal: isExternal || false,
@@ -39,13 +40,14 @@ router.post("/", async (req: Request, res: Response) => {
 // PUT /api/team-members/:id
 router.put("/:id", async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const { name, email, role, department, source, isExternal, company, active } = req.body;
+  const { name, email, role, jobFunction, department, source, isExternal, company, active } = req.body;
 
   const result = await db.update(teamMembers)
     .set({
       ...(name !== undefined && { name }),
       ...(email !== undefined && { email }),
       ...(role !== undefined && { role }),
+      ...(jobFunction !== undefined && { jobFunction }),
       ...(department !== undefined && { department }),
       ...(source !== undefined && { source }),
       ...(isExternal !== undefined && { isExternal }),

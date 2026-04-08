@@ -3,14 +3,16 @@ import { addDays, format, startOfISOWeek, getISOWeek, isToday as isTodayFn } fro
 import { ProjectAutocomplete } from "./project-autocomplete";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Save, Loader2, CopyCheck, MessageSquare, Moon } from "lucide-react";
+import { Save, Loader2, CopyCheck, MessageSquare, Moon, MapPin, Pencil } from "lucide-react";
 import {
   type CapacityEntry,
   type TeamMember,
   type Activity,
+  type Location,
+  type HolidayRecord,
   useSaveCapacity,
 } from "@/hooks/use-capacity";
-import { holidayMap, type Holiday } from "@shared/holidays";
+import { MemberEditDialog } from "./member-edit-dialog";
 
 interface DayInfo {
   date: string;
@@ -19,12 +21,13 @@ interface DayInfo {
   isWeekend: boolean;
   isToday: boolean;
   cwNum: number;
-  holiday: Holiday | null;
+  holiday: HolidayRecord | null;
 }
 
 interface WeekGroup {
   cwNum: number;
   days: DayInfo[];
+  isCurrentWeek: boolean;
 }
 
 interface WeeklyGridProps {
@@ -32,6 +35,8 @@ interface WeeklyGridProps {
   entries: CapacityEntry[];
   teamMembers: TeamMember[];
   activities: Activity[];
+  locations: Location[];
+  holidays: HolidayRecord[];
 }
 
 interface CellState {
@@ -40,6 +45,7 @@ interface CellState {
   projectNumber: string;
   projectDescription: string;
   activityId: number | null;
+  locationId: number | null;
   comment: string;
   nightShift: boolean;
   dirty: boolean;
@@ -57,6 +63,7 @@ function emptyCell(): CellState {
     projectNumber: "",
     projectDescription: "",
     activityId: null,
+    locationId: null,
     comment: "",
     nightShift: false,
     dirty: false,
@@ -168,19 +175,85 @@ function CommentCell({
   );
 }
 
-export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: WeeklyGridProps) {
-  const saveMutation = useSaveCapacity();
+// ── Lightweight location picker ──
+function LocationPicker({
+  value,
+  locations,
+  onChange,
+}: {
+  value: number | null;
+  locations: Location[];
+  onChange: (id: number | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = locations.find((l) => l.id === value);
 
-  // Build all days across all weeks, with holiday lookup
-  const { allDays, weekGroups, weekdaysByWeek } = useMemo(() => {
-    // Determine which years we need holidays for
-    const yearSet = new Set<number>();
-    for (const ws of weekStarts) {
-      const y = new Date(ws + "T00:00:00").getFullYear();
-      yearSet.add(y);
-      yearSet.add(y + 1); // in case week spans year boundary
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
     }
-    const holidays = holidayMap(Array.from(yearSet));
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="h-5 w-full text-[10px] px-1 rounded border border-border/30 bg-transparent text-left truncate hover:bg-accent/50 flex items-center gap-0.5 transition-colors"
+      >
+        <MapPin className={`h-2.5 w-2.5 shrink-0 ${current ? "text-emerald-400" : "text-muted-foreground/30"}`} />
+        <span className={current ? "text-emerald-300/90 font-medium truncate" : "text-muted-foreground/40 truncate"}>
+          {current ? (current.shortCode || current.name) : "—"}
+        </span>
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 w-44 max-h-48 overflow-auto rounded-md border bg-popover p-1 shadow-lg">
+          <button
+            className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent hover:text-accent-foreground text-muted-foreground"
+            onClick={() => { onChange(null); setOpen(false); }}
+          >
+            — (none)
+          </button>
+          {locations.filter(l => l.active).map((l) => (
+            <button
+              key={l.id}
+              className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent hover:text-accent-foreground ${
+                l.id === value ? "bg-accent text-accent-foreground font-medium" : ""
+              }`}
+              onClick={() => { onChange(l.id); setOpen(false); }}
+            >
+              <span className="font-medium">{l.name}</span>
+              {l.shortCode && <span className="ml-1 text-muted-foreground">({l.shortCode})</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locations, holidays: holidaysList }: WeeklyGridProps) {
+  const saveMutation = useSaveCapacity();
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+
+  // Build all days across all weeks, with holiday lookup from DB
+  const { allDays, weekGroups, weekdaysByWeek } = useMemo(() => {
+    // Build a date → holiday lookup from DB records
+    const holidayLookup = new Map<string, HolidayRecord>();
+    for (const h of holidaysList) {
+      if (h.active) {
+        // If multiple holidays on same date, prefer showing the first one
+        if (!holidayLookup.has(h.date)) {
+          holidayLookup.set(h.date, h);
+        }
+      }
+    }
 
     const allDays: DayInfo[] = [];
     const weekGroups: WeekGroup[] = [];
@@ -202,19 +275,19 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
           isWeekend: i >= 5,
           isToday: isTodayFn(d),
           cwNum,
-          holiday: holidays.get(dateStr) || null,
+          holiday: holidayLookup.get(dateStr) || null,
         };
         days.push(day);
         allDays.push(day);
         if (!day.isWeekend) weekdays.push(day);
       }
 
-      weekGroups.push({ cwNum, days });
+      weekGroups.push({ cwNum, days, isCurrentWeek: days.some((d) => d.isToday) });
       weekdaysByWeek.push(weekdays);
     }
 
     return { allDays, weekGroups, weekdaysByWeek };
-  }, [weekStarts]);
+  }, [weekStarts, holidaysList]);
 
   const multiWeek = weekStarts.length > 1;
 
@@ -229,6 +302,7 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
         projectNumber: entry.projectNumber || "",
         projectDescription: entry.projectDescription || "",
         activityId: entry.activityId,
+        locationId: entry.locationId,
         comment: entry.comment || "",
         nightShift: !!entry.nightShift,
         dirty: false,
@@ -237,26 +311,40 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
     return state;
   });
 
-  // Re-sync when entries change (week navigation)
-  const entriesKey = useMemo(() => entries.map((e) => e.id).join(","), [entries]);
+  // Re-sync when entries change (week navigation OR after save refetch)
+  // Include data fields in the key so edits to existing entries trigger a rebuild
+  const entriesKey = useMemo(
+    () => entries.map((e) => `${e.id}:${e.projectId}:${e.activityId}:${e.locationId}:${e.comment}:${e.nightShift}`).join(","),
+    [entries]
+  );
   const [lastEntriesKey, setLastEntriesKey] = useState(entriesKey);
   if (entriesKey !== lastEntriesKey) {
     setLastEntriesKey(entriesKey);
-    const state: GridState = {};
-    for (const entry of entries) {
-      const key = cellKey(entry.teamMemberId, entry.date);
-      state[key] = {
-        id: entry.id,
-        projectId: entry.projectId,
-        projectNumber: entry.projectNumber || "",
-        projectDescription: entry.projectDescription || "",
-        activityId: entry.activityId,
-        comment: entry.comment || "",
-        nightShift: !!entry.nightShift,
-        dirty: false,
-      };
-    }
-    setGrid(state);
+    setGrid((prev) => {
+      const state: GridState = {};
+      // First, load fresh server data
+      for (const entry of entries) {
+        const key = cellKey(entry.teamMemberId, entry.date);
+        state[key] = {
+          id: entry.id,
+          projectId: entry.projectId,
+          projectNumber: entry.projectNumber || "",
+          projectDescription: entry.projectDescription || "",
+          activityId: entry.activityId,
+          locationId: entry.locationId,
+          comment: entry.comment || "",
+          nightShift: !!entry.nightShift,
+          dirty: false,
+        };
+      }
+      // Then, overlay any dirty (unsaved) cells from the previous grid
+      for (const [key, cell] of Object.entries(prev)) {
+        if (cell.dirty) {
+          state[key] = cell;
+        }
+      }
+      return state;
+    });
   }
 
   const getCell = useCallback(
@@ -307,6 +395,7 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
             projectNumber: mondayCell.projectNumber,
             projectDescription: mondayCell.projectDescription,
             activityId: mondayCell.activityId,
+            locationId: mondayCell.locationId,
             comment: mondayCell.comment,
             nightShift: mondayCell.nightShift,
             dirty: true,
@@ -328,6 +417,7 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
           date,
           projectId: cell.projectId,
           activityId: cell.activityId,
+          locationId: cell.locationId,
           comment: cell.comment || null,
           nightShift: cell.nightShift,
         };
@@ -335,18 +425,10 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
 
     if (!dirtyEntries.length) return;
 
-    const result = await saveMutation.mutateAsync(dirtyEntries);
-
-    setGrid((prev) => {
-      const next = { ...prev };
-      for (const saved of result.entries || []) {
-        const key = cellKey(saved.teamMemberId, saved.date);
-        if (next[key]) {
-          next[key] = { ...next[key], id: saved.id, dirty: false };
-        }
-      }
-      return next;
-    });
+    // Save to server — onSuccess invalidates queries, which triggers
+    // a refetch. The entriesKey re-sync will rebuild the grid with
+    // dirty: false from the fresh server data.
+    await saveMutation.mutateAsync(dirtyEntries);
   }
 
   // Separate internal vs external members
@@ -367,19 +449,25 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
         </Button>
       </div>
 
-      <div className="overflow-auto border rounded-lg bg-card">
+      <div className="overflow-auto border-2 border-border rounded-lg bg-card">
         <table className="w-full border-collapse">
           <thead>
             {/* CW header row */}
             <tr>
-              <th className="sticky left-0 z-30 bg-card border-b-2 border-primary/20 px-3 py-2 w-[200px] min-w-[200px]" />
+              <th className="sticky left-0 z-30 bg-card border-b-2 border-border px-3 py-2 w-[200px] min-w-[200px]" />
               {weekGroups.map((wg) => (
                 <th
                   key={wg.cwNum}
                   colSpan={wg.days.length}
-                  className="border-b-2 border-primary/20 border-l px-2 py-2 text-center"
+                  className={`border-b-2 border-l-2 px-2 py-2 text-center ${
+                    wg.isCurrentWeek
+                      ? "bg-primary/10 border-primary/30"
+                      : "border-border"
+                  }`}
                 >
-                  <span className="text-sm font-bold text-primary tracking-wider">
+                  <span className={`text-sm font-bold tracking-wider ${
+                    wg.isCurrentWeek ? "text-primary" : "text-muted-foreground"
+                  }`}>
                     CW {String(wg.cwNum).padStart(2, "0")}
                   </span>
                 </th>
@@ -387,28 +475,28 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
             </tr>
             {/* Day header row */}
             <tr>
-              <th className="sticky left-0 z-30 bg-card border-b border-r px-3 py-1.5 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[200px] min-w-[200px]">
+              <th className="sticky left-0 z-30 bg-card border-b-2 border-r-2 border-border px-3 py-1.5 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-[200px] min-w-[200px]">
                 Team Member
               </th>
               {allDays.map((day) => (
                 <th
                   key={day.date}
-                  className={`border-b border-l px-1.5 py-1.5 text-center min-w-[150px] ${
+                  className={`border-b-2 border-border border-l px-1.5 py-1.5 text-center min-w-[150px] ${
                     day.isWeekend ? "bg-muted/20 text-muted-foreground/50" : ""
-                  } ${day.isToday ? "bg-primary/10" : ""} ${day.holiday ? "bg-rose-500/[0.08]" : ""}`}
+                  } ${day.isToday ? "bg-primary/15 border-l-2 border-l-primary border-r-2 border-r-primary" : ""} ${day.holiday ? "bg-rose-500/[0.08]" : ""}`}
                 >
                   <div className={`text-xs font-semibold ${day.isToday ? "text-primary" : "text-foreground/80"}`}>
                     {day.label}
                     <span className="ml-1 font-normal text-muted-foreground">{day.dayNum}</span>
                   </div>
                   {day.isToday && (
-                    <div className="text-[9px] font-medium text-primary/70 uppercase tracking-widest">today</div>
+                    <div className="text-[9px] font-bold text-primary uppercase tracking-widest">today</div>
                   )}
                   {day.holiday && (
-                    <div className="text-[9px] font-medium text-rose-400 truncate leading-tight mt-0.5" title={day.holiday.nameDE ? `${day.holiday.name} / ${day.holiday.nameDE}` : day.holiday.name}>
+                    <div className="text-[9px] font-medium text-rose-400 truncate leading-tight mt-0.5" title={day.holiday.nameLocal ? `${day.holiday.name} / ${day.holiday.nameLocal}` : day.holiday.name}>
                       <span className="inline-flex items-center gap-0.5">
-                        <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${day.holiday.country === "US" ? "bg-blue-400" : day.holiday.country === "DE" ? "bg-amber-400" : "bg-rose-400"}`} />
-                        {day.holiday.country === "DE" ? (day.holiday.nameDE || day.holiday.name) : day.holiday.name}
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${day.holiday.category === "us_federal" ? "bg-blue-400" : day.holiday.category === "german" ? "bg-amber-400" : "bg-emerald-400"}`} />
+                        {day.holiday.category === "german" && day.holiday.nameLocal ? day.holiday.nameLocal : day.holiday.name}
                       </span>
                     </div>
                   )}
@@ -422,6 +510,11 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
           </tbody>
         </table>
       </div>
+      <MemberEditDialog
+        member={editingMember}
+        open={!!editingMember}
+        onOpenChange={(open) => { if (!open) setEditingMember(null); }}
+      />
     </div>
   );
 
@@ -431,7 +524,7 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
         <tr>
           <td
             colSpan={1 + allDays.length}
-            className="sticky left-0 bg-muted/60 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground border-y border-border/50"
+            className="sticky left-0 bg-muted/60 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground border-y-2 border-border"
           >
             {groupLabel}
           </td>
@@ -444,6 +537,8 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
   function renderMemberRow(member: TeamMember, memberIdx: number) {
     const isEven = memberIdx % 2 === 0;
     const bgClass = isEven ? "bg-card" : "bg-muted/[0.15]";
+    // Sticky cells need opaque backgrounds so content doesn't bleed through when scrolling
+    const stickyBgClass = isEven ? "bg-card" : "bg-[hsl(var(--muted))]";
 
     return (
       <tr
@@ -451,16 +546,23 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
         className={`${bgClass} border-b border-border/40 hover:bg-accent/5 transition-colors`}
       >
         {/* Member name — sticky left */}
-        <td className={`sticky left-0 z-20 ${bgClass} border-r px-3 py-2 align-top w-[200px] min-w-[200px]`}>
+        <td className={`sticky left-0 z-20 ${stickyBgClass} border-r-2 border-border px-3 py-2 align-top w-[200px] min-w-[200px]`}>
           <div className="flex items-start justify-between gap-1">
-            <div className="min-w-0">
-              <div className="font-semibold text-sm leading-tight truncate">{member.name}</div>
-              {(member.role || member.company) && (
+            <button
+              className="min-w-0 text-left group/name cursor-pointer hover:text-primary transition-colors"
+              onClick={() => setEditingMember(member)}
+              title="Click to edit member"
+            >
+              <div className="font-semibold text-sm leading-tight truncate flex items-center gap-1">
+                {member.name}
+                <Pencil className="h-2.5 w-2.5 opacity-0 group-hover/name:opacity-50 shrink-0 transition-opacity" />
+              </div>
+              {(member.jobFunction || member.company) && (
                 <div className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
-                  {[member.role, member.company].filter(Boolean).join(" · ")}
+                  {[member.jobFunction, member.company].filter(Boolean).join(" · ")}
                 </div>
               )}
-            </div>
+            </button>
             {/* Fill week buttons */}
             <div className="flex gap-0.5 shrink-0">
               {weekdaysByWeek.map((weekdays, wIdx) => {
@@ -493,7 +595,7 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
               key={day.date}
               className={`border-l px-1 py-1.5 align-top min-w-[150px] ${
                 day.isWeekend ? "bg-muted/15" : ""
-              } ${day.isToday ? "bg-primary/[0.04]" : ""} ${
+              } ${day.isToday ? "bg-primary/[0.06] border-l-2 border-l-primary border-r-2 border-r-primary" : ""} ${
                 day.holiday ? "bg-rose-500/[0.04]" : ""
               } ${isDirty ? "bg-yellow-500/[0.08]" : ""} ${
                 cell.nightShift ? "bg-indigo-500/[0.08]" : ""
@@ -547,6 +649,14 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities }: Wee
                   activities={activities}
                   onChange={(id) =>
                     updateCell(member.id, day.date, { activityId: id })
+                  }
+                />
+                {/* Location picker */}
+                <LocationPicker
+                  value={cell.locationId}
+                  locations={locations}
+                  onChange={(id) =>
+                    updateCell(member.id, day.date, { locationId: id })
                   }
                 />
                 {/* Comment — inline click-to-edit */}
