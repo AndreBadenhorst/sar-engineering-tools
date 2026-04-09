@@ -32,7 +32,7 @@ Dark-only theme. Hash-based routing for iframe compatibility.
 │  SQLite (better-sqlite3) │  WAL mode, foreign keys on       │
 │  ┌───────────┐ ┌────────┴──────┐ ┌──────────────────────┐  │
 │  │ Projects  │ │   Capacity    │ │    Inventory         │  │
-│  │ (QB sync) │ │ Entries+Log   │ │ Parts+Stock+Txns     │  │
+│  │           │ │ Entries+Log   │ │ Parts+Stock+Txns     │  │
 │  └───────────┘ └───────────────┘ └──────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -55,11 +55,11 @@ Weekly team allocation grid.
 - Changelog tracks field-level diffs with old→new values
 
 ### 3. Projects (full-stack)
-QB Desktop mirror.
-- 1014 projects imported from Excel export
+Project tracking with financial data.
+- Projects imported from Excel export
 - Financial fields: balance, estimateTotal (cents)
 - Job metadata: status, type, dates, rep, customerType
-- Source tracking: qb_sync vs manual
+- Source tracking via source field
 
 ### 4. Inventory (full-stack)
 Parts catalog + stock management.
@@ -70,8 +70,8 @@ Parts catalog + stock management.
 ## Data Flow
 
 ```
-QB Desktop → Excel Export → seed-projects-qb.ts → SQLite
-                                                      ↕
+Excel Export → seed-projects-qb.ts → SQLite
+                                        ↕
 Browser UI ← React Query ← Express API ← Drizzle ORM ←→ SQLite
 ```
 
@@ -112,3 +112,5 @@ All mounted under `/api/`:
 | parts.ts | /api/parts | parts |
 | inventory.ts | /api/inventory | inventory_levels, stock_transactions |
 | storage-locations.ts | /api/storage-locations | storage_locations |
+| locations.ts | /api/locations | locations |
+| holidays.ts | /api/holidays | holidays |

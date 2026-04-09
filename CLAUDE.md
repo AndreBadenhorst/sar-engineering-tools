@@ -8,7 +8,7 @@
 
 1. **EHB Railcut Power Section Sizing** — Physics simulation for monorail carrier current draw and fuse trip assessment
 2. **Capacity Planner** — Weekly team allocation grid with night shift, holidays, export, changelog
-3. **Projects** — Project list synced from QuickBooks Desktop (QB) with financial tracking
+3. **Projects** — Project list with financial tracking (imported from Excel)
 4. **Inventory** — Parts catalog with multi-location stock levels
 5. **Book Stock** — Book-in/out transaction interface with project attribution
 
@@ -46,7 +46,7 @@ client/src/
     home.tsx                         # Tool launcher dashboard
     railcut-sizing.tsx               # Monorail sizing tool
     capacity-planner.tsx             # Capacity planner (filters, week nav, grid)
-    project-list.tsx                 # QB project list with financials
+    project-list.tsx                 # Project list with financials
     inventory.tsx                    # Parts inventory
     stock-booking.tsx                # Book-in/out interface
     not-found.tsx                    # 404
@@ -82,17 +82,22 @@ server/
   routes.ts                          # Route mount file
   routes/
     capacity.ts                      # Capacity CRUD + changelog + bulk upsert
-    projects.ts                      # Project CRUD (QB fields)
+    projects.ts                      # Project CRUD (financial fields)
     team-members.ts                  # Team member CRUD
     activities.ts                    # Activity types CRUD
     parts.ts                         # Parts catalog CRUD
     inventory.ts                     # Book-in/out transactions
     storage-locations.ts             # Warehouse location CRUD
+    locations.ts                     # Office locations CRUD
+    holidays.ts                      # Holiday data
   seed.ts                            # Initial seed: team members + activities
-  seed-projects-qb.ts               # Import projects from QB Excel export
+  seed-projects-qb.ts               # Import projects from Excel export
   seed-capacity-test.ts              # Test data for capacity planner
-  migrate-projects.ts                # Add QB financial fields to projects
+  migrate-projects.ts                # Add financial fields to projects
   migrate-changelog.ts               # Add capacity_changelog table
+  migrate-locations.ts               # Add locations table
+  migrate-holidays.ts                # Add holidays support
+  migrate-job-function.ts            # Add job function field
 
 shared/
   schema.ts                          # Drizzle ORM schema (ALL tables defined here)
@@ -118,7 +123,7 @@ All tables defined in `shared/schema.ts`. Key tables:
 | Table | Purpose |
 |-------|---------|
 | team_members | Engineers + external contractors (name, role, company, isExternal) |
-| projects | QB jobs (number, customer, balance, estimateTotal, jobStatus, dates) |
+| projects | Jobs (number, customer, balance, estimateTotal, jobStatus, dates) |
 | activities | Work types (Commissioning, Software Prep, Installation, etc.) |
 | capacity_entries | Daily assignments (member × date → project, activity, comment, nightShift) |
 | capacity_changelog | Audit trail (action, field, oldValue, newValue, summary) |
@@ -135,9 +140,12 @@ All tables defined in `shared/schema.ts`. Key tables:
 Run in order for a fresh DB:
 ```bash
 npx tsx server/seed.ts                # Team members + activities
-npx tsx server/migrate-projects.ts    # QB columns on projects table
-npx tsx server/seed-projects-qb.ts    # Import 1014 projects from Excel
+npx tsx server/migrate-projects.ts    # Financial columns on projects table
+npx tsx server/seed-projects-qb.ts    # Import projects from Excel export
 npx tsx server/migrate-changelog.ts   # Changelog table + indexes
+npx tsx server/migrate-locations.ts   # Locations table
+npx tsx server/migrate-holidays.ts    # Holidays support
+npx tsx server/migrate-job-function.ts # Job function field
 ```
 
 ---
@@ -200,7 +208,7 @@ npx tsx server/migrate-changelog.ts   # Changelog table + indexes
 8. **Drives are SEW Movimot** — 160% current limit per Doc 21214190
 9. **Financial values in cents** (integer) — no floats for money
 10. **Projects: active-only search** in capacity planner autocomplete
-11. **QB is the source of truth** for projects — source field tracks origin
+11. **Projects imported from Excel** — source field tracks origin
 12. **Dates: store YYYY-MM-DD, display MM/DD/YYYY** — US locale. All user-facing dates must be formatted MM/DD/YYYY. Database and API always use ISO YYYY-MM-DD internally.
 
 ---

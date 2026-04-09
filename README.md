@@ -17,7 +17,7 @@ npm start            # Run production server
 |--------|-------|-------------|
 | **Railcut Sizing** | `/#/tools/railcut-sizing` | EHB monorail power section sizing with physics simulation |
 | **Capacity Planner** | `/#/tools/capacity-planner` | Weekly team allocation grid with night shift, holidays, changelog |
-| **Projects** | `/#/tools/projects` | Project list synced from QuickBooks Desktop |
+| **Projects** | `/#/tools/projects` | Project list with financial tracking |
 | **Inventory** | `/#/tools/inventory` | Parts catalog with stock levels and locations |
 | **Book Stock** | `/#/tools/book-stock` | Book-in / book-out stock transactions |
 
@@ -68,7 +68,7 @@ data/
 SQLite database stored at `data/sar-tools.db`. Tables:
 
 - **team_members** — Engineers and external contractors
-- **projects** — Jobs from QuickBooks (number, balance, estimate, status)
+- **projects** — Jobs (number, customer, balance, estimate, status, dates)
 - **activities** — Work activity types (Commissioning, Software Prep, etc.)
 - **capacity_entries** — Daily assignments per team member (project, activity, night shift)
 - **capacity_changelog** — Audit trail of all capacity changes
@@ -82,9 +82,12 @@ SQLite database stored at `data/sar-tools.db`. Tables:
 
 ```bash
 npx tsx server/seed.ts                # Seed team members + activities
-npx tsx server/seed-projects-qb.ts    # Import projects from QB Excel
-npx tsx server/migrate-projects.ts    # Add QB fields to projects table
+npx tsx server/migrate-projects.ts    # Add financial fields to projects table
+npx tsx server/seed-projects-qb.ts    # Import projects from Excel export
 npx tsx server/migrate-changelog.ts   # Add changelog table
+npx tsx server/migrate-locations.ts   # Add locations table
+npx tsx server/migrate-holidays.ts    # Add holidays support
+npx tsx server/migrate-job-function.ts # Add job function field
 ```
 
 ## API Endpoints
@@ -102,6 +105,8 @@ npx tsx server/migrate-changelog.ts   # Add changelog table
 | POST | `/api/inventory/book-in` | Book stock in |
 | POST | `/api/inventory/book-out` | Book stock out |
 | GET | `/api/storage-locations` | Warehouse locations |
+| GET | `/api/locations` | Office locations |
+| GET | `/api/holidays` | Holiday data |
 
 ## Key Features
 
@@ -114,7 +119,7 @@ npx tsx server/migrate-changelog.ts   # Add changelog table
 
 ### Capacity Planner
 - Weekly grid view (1, 2, or 4 week zoom)
-- Project autocomplete from QB database
+- Project autocomplete from database
 - Night shift toggle per cell (moon icon)
 - Fill Week: copy Monday to Tue-Fri in one click
 - US + German holiday indicators (color-coded by country)
@@ -124,7 +129,7 @@ npx tsx server/migrate-changelog.ts   # Add changelog table
 - Export to clipboard (HTML table for Outlook paste)
 
 ### Inventory
-- Parts catalog with QB sync structure
+- Parts catalog
 - Multi-location stock tracking
 - Book-in/out with project cost attribution
 - Transaction audit log
