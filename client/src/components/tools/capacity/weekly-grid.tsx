@@ -355,14 +355,6 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
 
   const hasDirty = Object.values(grid).some((c) => c.dirty);
 
-  const dirtyRef = useRef(false);
-  dirtyRef.current = hasDirty;
-
-  useEffect(() => {
-    const el = document.getElementById("capacity-grid-root");
-    if (el) el.setAttribute("data-dirty", String(hasDirty));
-  }, [hasDirty]);
-
   // Expose save state to parent for sticky header button
   const saveRef = useRef<() => Promise<void>>();
   saveRef.current = handleSave;
@@ -459,7 +451,7 @@ export function WeeklyGrid({ weekStarts, entries, teamMembers, activities, locat
   const external = teamMembers.filter((m) => m.isExternal);
 
   return (
-    <div className="space-y-3" id="capacity-grid-root" data-dirty={String(hasDirty)}>
+    <div className="space-y-3">
 
       <div className="overflow-auto border-2 border-border rounded-lg bg-card">
         <table className="w-full border-collapse">

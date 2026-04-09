@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  SAR Engineering Tools — Full Backup (DB + Git Push)
+REM  SAR Intranet - Codex — Full Backup (DB + Git Push)
 REM  Backs up the database, commits all code changes, pushes to GitHub
 REM ============================================================
 

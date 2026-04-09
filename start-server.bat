@@ -1,10 +1,10 @@
 @echo off
-title SAR Engineering Tools - Server
+title SAR Intranet - Codex - Server
 color 0A
 
 echo.
 echo  ====================================================
-echo   SAR Engineering Tools - Dev Server
+echo   SAR Intranet - Codex - Dev Server
 echo  ====================================================
 echo.
 echo   This window runs the server. Keep it open!

@@ -1,6 +1,6 @@
 @echo off
 REM ============================================================
-REM  SAR Engineering Tools — Database Backup Script
+REM  SAR Intranet - Codex — Database Backup Script
 REM  Run manually or schedule with Windows Task Scheduler
 REM ============================================================
 

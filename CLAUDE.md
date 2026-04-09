@@ -1,8 +1,8 @@
-# CLAUDE.md — SAR Engineering Tools
+# CLAUDE.md — SAR Intranet - Codex
 
 ## Project Overview
 
-**SAR Group Engineering Tools** — an internal web platform for SAR Automation LP engineers. Started as a monorail sizing calculator, now a growing mini-ERP covering engineering tools, capacity planning, project tracking, and inventory management.
+**SAR Intranet - Codex** — an internal web platform for SAR Automation LP engineers. Started as a monorail sizing calculator, now a growing mini-ERP covering engineering tools, capacity planning, project tracking, and inventory management.
 
 ### Active Modules
 

@@ -1,6 +1,6 @@
 @echo off
 REM ══════════════════════════════════════════════════════════════
-REM  SAR Engineering Tools — Deploy to Test Server
+REM  SAR Intranet - Codex — Deploy to Test Server
 REM
 REM  Usage:  deploy.bat \\SERVER\share\sar-tools
 REM
@@ -25,7 +25,7 @@ set BACKUP_NAME=sar-tools-pre-deploy-%TIMESTAMP%.db
 
 echo.
 echo ══════════════════════════════════════════════════════════
-echo  SAR Engineering Tools — Deployment
+echo  SAR Intranet - Codex — Deployment
 echo  Target: %TARGET%
 echo ══════════════════════════════════════════════════════════
 echo.

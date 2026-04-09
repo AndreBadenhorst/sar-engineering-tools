@@ -41,22 +41,19 @@ export default function CapacityPlanner() {
   // Unsaved changes warning state
   const [pendingNavigation, setPendingNavigation] = useState<Date | null>(null);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
-
-  /** Check if grid has dirty cells by reading the DOM attribute */
-  function gridIsDirty(): boolean {
-    const el = document.getElementById("capacity-grid-root");
-    return el?.getAttribute("data-dirty") === "true";
-  }
+  const [gridDirty, setGridDirty] = useState(false);
+  const [gridSaving, setGridSaving] = useState(false);
+  const gridSaveRef = useRef<(() => Promise<void>) | null>(null);
 
   /** Navigate to a new week — with unsaved check */
   const safeNavigate = useCallback((date: Date) => {
-    if (gridIsDirty()) {
+    if (gridDirty) {
       setPendingNavigation(date);
       setShowUnsavedDialog(true);
     } else {
       setCurrentDate(date);
     }
-  }, []);
+  }, [gridDirty]);
 
   function confirmDiscard() {
     if (pendingNavigation) {
@@ -88,19 +85,14 @@ export default function CapacityPlanner() {
   // Browser-level unsaved changes warning (tab close / browser back)
   useEffect(() => {
     function handleBeforeUnload(e: BeforeUnloadEvent) {
-      if (gridIsDirty()) {
+      if (gridDirty) {
         e.preventDefault();
         e.returnValue = "";
       }
     }
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, []);
-
-  // Save state from grid (exposed via onDirtyChange callback)
-  const [gridDirty, setGridDirty] = useState(false);
-  const [gridSaving, setGridSaving] = useState(false);
-  const gridSaveRef = useRef<(() => Promise<void>) | null>(null);
+  }, [gridDirty]);
 
   const handleDirtyChange = useCallback((dirty: boolean, save: () => Promise<void>, saving: boolean) => {
     setGridDirty(dirty);

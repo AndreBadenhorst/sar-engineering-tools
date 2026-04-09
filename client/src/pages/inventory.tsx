@@ -11,6 +11,8 @@ import {
   useBookIn,
   useAdjustStock,
   type Part,
+  type CreatePartInput,
+  type CreateStorageLocationInput,
 } from "@/hooks/use-inventory";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -226,7 +228,7 @@ function AddPartDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!partNumber.trim() || !name.trim()) return;
-    await createPart.mutateAsync({
+    const payload: CreatePartInput = {
       partNumber: partNumber.trim(),
       name: name.trim(),
       description: description.trim() || null,
@@ -235,7 +237,8 @@ function AddPartDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v
       preferredVendor: preferredVendor.trim() || null,
       manufacturer: manufacturer.trim() || null,
       manufacturerPartNumber: mfgPartNumber.trim() || null,
-    } as any);
+    };
+    await createPart.mutateAsync(payload);
     reset();
     onOpenChange(false);
   }
@@ -526,11 +529,12 @@ function AddLocationDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!warehouse.trim()) return;
-    await createLoc.mutateAsync({
+    const payload: CreateStorageLocationInput = {
       warehouse: warehouse.trim(),
       shelf: shelf.trim() || null,
       bin: bin.trim() || null,
-    } as any);
+    };
+    await createLoc.mutateAsync(payload);
     setWarehouse(""); setShelf(""); setBin("");
     onOpenChange(false);
   }

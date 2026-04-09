@@ -1,20 +1,47 @@
 import { Router, type Request, type Response } from "express";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   inventoryLevels,
-  stockTransactions,
   parts,
-  storageLocations,
   projects,
+  stockTransactions,
+  storageLocations,
   teamMembers,
 } from "@shared/schema";
-import { eq, and, lte, gte, sql, desc } from "drizzle-orm";
+import {
+  formatZodError,
+  inventoryAdjustSchema,
+  inventoryBookInSchema,
+  inventoryBookOutSchema,
+  inventoryTransactionsQuerySchema,
+  positiveIdParamSchema,
+} from "../validation";
 
 const router = Router();
 
-// GET /api/inventory — all inventory levels with part + location info
+type DbClient = Pick<typeof db, "select" | "insert" | "update">;
+
+function sendValidationError(res: Response, details: string[]) {
+  return res.status(400).json({
+    message: "Invalid request",
+    details,
+  });
+}
+
+function getInventoryLevel(client: DbClient, partId: number, locationId: number) {
+  return (
+    client
+      .select()
+      .from(inventoryLevels)
+      .where(and(eq(inventoryLevels.partId, partId), eq(inventoryLevels.locationId, locationId)))
+      .get() ??
+    null
+  );
+}
+
 router.get("/", async (_req: Request, res: Response) => {
-  const rows = await db
+  const rows = db
     .select({
       id: inventoryLevels.id,
       partId: inventoryLevels.partId,
@@ -40,9 +67,8 @@ router.get("/", async (_req: Request, res: Response) => {
   res.json(rows);
 });
 
-// GET /api/inventory/low-stock
 router.get("/low-stock", async (_req: Request, res: Response) => {
-  const rows = await db
+  const rows = db
     .select({
       id: inventoryLevels.id,
       partId: inventoryLevels.partId,
@@ -63,28 +89,33 @@ router.get("/low-stock", async (_req: Request, res: Response) => {
         eq(parts.active, true),
         sql`${inventoryLevels.reorderPoint} IS NOT NULL`,
         sql`${inventoryLevels.qtyOnHand} <= ${inventoryLevels.reorderPoint}`,
-      )
+      ),
     )
     .orderBy(parts.partNumber);
 
   res.json(rows);
 });
 
-// GET /api/inventory/transactions
 router.get("/transactions", async (req: Request, res: Response) => {
-  const partId = req.query.partId ? Number(req.query.partId) : null;
-  const type = req.query.type ? String(req.query.type) : null;
-  const from = req.query.from ? String(req.query.from) : null;
-  const to = req.query.to ? String(req.query.to) : null;
-  const limit = req.query.limit ? Number(req.query.limit) : 100;
+  const parsed = inventoryTransactionsQuerySchema.safeParse({
+    partId: req.query.partId ? Number(req.query.partId) : undefined,
+    type: req.query.type || undefined,
+    from: req.query.from || undefined,
+    to: req.query.to || undefined,
+    limit: req.query.limit ? Number(req.query.limit) : undefined,
+  });
+  if (!parsed.success) {
+    return sendValidationError(res, formatZodError(parsed.error));
+  }
 
+  const { partId, type, from, to, limit } = parsed.data;
   const conditions: any[] = [];
   if (partId) conditions.push(eq(stockTransactions.partId, partId));
-  if (type) conditions.push(eq(stockTransactions.type, type as any));
-  if (from) conditions.push(gte(stockTransactions.createdAt, from));
-  if (to) conditions.push(lte(stockTransactions.createdAt, to));
+  if (type) conditions.push(eq(stockTransactions.type, type));
+  if (from) conditions.push(gte(stockTransactions.createdAt, `${from} 00:00:00`));
+  if (to) conditions.push(lte(stockTransactions.createdAt, `${to} 23:59:59`));
 
-  const rows = await db
+  const rows = db
     .select({
       id: stockTransactions.id,
       partId: stockTransactions.partId,
@@ -115,11 +146,13 @@ router.get("/transactions", async (req: Request, res: Response) => {
   res.json(rows);
 });
 
-// GET /api/inventory/project-costs/:projectId
 router.get("/project-costs/:projectId", async (req: Request, res: Response) => {
-  const projectId = Number(req.params.projectId);
+  const parsed = positiveIdParamSchema.safeParse({ id: Number(req.params.projectId) });
+  if (!parsed.success) {
+    return sendValidationError(res, formatZodError(parsed.error));
+  }
 
-  const rows = await db
+  const rows = db
     .select({
       partId: stockTransactions.partId,
       partNumber: parts.partNumber,
@@ -130,178 +163,176 @@ router.get("/project-costs/:projectId", async (req: Request, res: Response) => {
     })
     .from(stockTransactions)
     .innerJoin(parts, eq(stockTransactions.partId, parts.id))
-    .where(eq(stockTransactions.projectId, projectId))
+    .where(eq(stockTransactions.projectId, parsed.data.id))
     .groupBy(stockTransactions.partId)
     .orderBy(parts.partNumber);
 
   res.json(rows);
 });
 
-// POST /api/inventory/book-in
 router.post("/book-in", async (req: Request, res: Response) => {
-  const { partId, locationId, qty, reason, projectId, performedBy, notes } = req.body;
-  if (!partId || !locationId || !qty || qty <= 0) {
-    return res.status(400).json({ message: "partId, locationId, and positive qty required" });
+  const parsed = inventoryBookInSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendValidationError(res, formatZodError(parsed.error));
   }
 
-  try {
-    // Check existing level
-    const existing = await db
-      .select()
-      .from(inventoryLevels)
-      .where(and(eq(inventoryLevels.partId, partId), eq(inventoryLevels.locationId, locationId)));
+  const result = db.transaction((tx) => {
+    const existing = getInventoryLevel(tx, parsed.data.partId, parsed.data.locationId);
+    let newQty = parsed.data.qty;
 
-    let newQty: number;
-    if (existing.length > 0) {
-      newQty = existing[0].qtyOnHand + qty;
-      await db
+    if (existing) {
+      newQty = existing.qtyOnHand + parsed.data.qty;
+      tx
         .update(inventoryLevels)
         .set({ qtyOnHand: newQty, updatedAt: sql`datetime('now')` })
-        .where(eq(inventoryLevels.id, existing[0].id));
+        .where(eq(inventoryLevels.id, existing.id));
     } else {
-      newQty = qty;
-      await db.insert(inventoryLevels).values({
-        partId,
-        locationId,
+      tx.insert(inventoryLevels).values({
+        partId: parsed.data.partId,
+        locationId: parsed.data.locationId,
         qtyOnHand: newQty,
       });
     }
 
-    // Log transaction
-    const txn = await db.insert(stockTransactions).values({
-      partId,
-      locationId,
-      type: "book_in",
-      qty: qty,
-      reason: reason || "received from vendor",
-      projectId: projectId || null,
-      performedBy: performedBy || null,
-      notes: notes || null,
-      qtyAfter: newQty,
-    }).returning();
+    const transaction = tx
+      .insert(stockTransactions)
+      .values({
+        partId: parsed.data.partId,
+        locationId: parsed.data.locationId,
+        type: "book_in",
+        qty: parsed.data.qty,
+        reason: parsed.data.reason || "received from vendor",
+        projectId: parsed.data.projectId,
+        performedBy: parsed.data.performedBy,
+        notes: parsed.data.notes,
+        qtyAfter: newQty,
+      })
+      .returning()
+      .get();
 
-    res.status(201).json({ transaction: txn[0], qtyAfter: newQty });
-  } catch (err: any) {
-    res.status(500).json({ message: err.message });
-  }
+    return { transaction, qtyAfter: newQty };
+  });
+
+  res.status(201).json(result);
 });
 
-// POST /api/inventory/book-out
 router.post("/book-out", async (req: Request, res: Response) => {
-  const { partId, locationId, qty, reason, projectId, performedBy, notes, shelfQtyRemaining } = req.body;
-  if (!partId || !locationId || !qty || qty <= 0) {
-    return res.status(400).json({ message: "partId, locationId, and positive qty required" });
+  const parsed = inventoryBookOutSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendValidationError(res, formatZodError(parsed.error));
   }
 
   try {
-    const existing = await db
-      .select()
-      .from(inventoryLevels)
-      .where(and(eq(inventoryLevels.partId, partId), eq(inventoryLevels.locationId, locationId)));
+    const result = db.transaction((tx) => {
+      const existing = getInventoryLevel(tx, parsed.data.partId, parsed.data.locationId);
+      if (!existing || existing.qtyOnHand < parsed.data.qty) {
+        throw new Error(
+          `Insufficient stock. Available: ${existing ? existing.qtyOnHand : 0}`,
+        );
+      }
 
-    if (!existing.length || existing[0].qtyOnHand < qty) {
-      return res.status(400).json({
-        message: `Insufficient stock. Available: ${existing.length ? existing[0].qtyOnHand : 0}`,
-      });
-    }
+      let newQty = existing.qtyOnHand - parsed.data.qty;
+      const discrepancy =
+        parsed.data.shelfQtyRemaining != null && newQty !== parsed.data.shelfQtyRemaining;
 
-    let newQty = existing[0].qtyOnHand - qty;
-    const discrepancy = shelfQtyRemaining != null ? newQty !== shelfQtyRemaining : false;
-
-    // Log book-out
-    await db.insert(stockTransactions).values({
-      partId,
-      locationId,
-      type: "book_out",
-      qty: -qty,
-      reason: reason || "project use",
-      projectId: projectId || null,
-      performedBy: performedBy || null,
-      notes: notes || null,
-      qtyAfter: newQty,
-    });
-
-    // If shelf count differs, create adjustment
-    if (shelfQtyRemaining != null && discrepancy) {
-      const adjustment = shelfQtyRemaining - newQty;
-      newQty = shelfQtyRemaining;
-      await db.insert(stockTransactions).values({
-        partId,
-        locationId,
-        type: "adjustment",
-        qty: adjustment,
-        reason: "cycle count correction (book-out discrepancy)",
-        performedBy: performedBy || null,
-        notes: `System expected ${existing[0].qtyOnHand - qty}, shelf count was ${shelfQtyRemaining}`,
+      tx.insert(stockTransactions).values({
+        partId: parsed.data.partId,
+        locationId: parsed.data.locationId,
+        type: "book_out",
+        qty: -parsed.data.qty,
+        reason: parsed.data.reason || "project use",
+        projectId: parsed.data.projectId,
+        performedBy: parsed.data.performedBy,
+        notes: parsed.data.notes,
         qtyAfter: newQty,
       });
-    }
 
-    // Update level
-    await db
-      .update(inventoryLevels)
-      .set({ qtyOnHand: newQty, updatedAt: sql`datetime('now')` })
-      .where(eq(inventoryLevels.id, existing[0].id));
+      if (parsed.data.shelfQtyRemaining != null && discrepancy) {
+        const adjustment = parsed.data.shelfQtyRemaining - newQty;
+        newQty = parsed.data.shelfQtyRemaining;
 
-    const lowStock =
-      existing[0].reorderPoint != null && newQty <= existing[0].reorderPoint;
+        tx.insert(stockTransactions).values({
+          partId: parsed.data.partId,
+          locationId: parsed.data.locationId,
+          type: "adjustment",
+          qty: adjustment,
+          reason: "cycle count correction (book-out discrepancy)",
+          performedBy: parsed.data.performedBy,
+          notes: `System expected ${existing.qtyOnHand - parsed.data.qty}, shelf count was ${parsed.data.shelfQtyRemaining}`,
+          qtyAfter: newQty,
+        });
+      }
 
-    res.status(201).json({
-      qtyAfter: newQty,
-      discrepancy,
-      lowStock,
-      reorderPoint: existing[0].reorderPoint,
-      reorderQty: existing[0].reorderQty,
+      tx
+        .update(inventoryLevels)
+        .set({ qtyOnHand: newQty, updatedAt: sql`datetime('now')` })
+        .where(eq(inventoryLevels.id, existing.id));
+
+      return {
+        qtyAfter: newQty,
+        discrepancy,
+        lowStock: existing.reorderPoint != null && newQty <= existing.reorderPoint,
+        reorderPoint: existing.reorderPoint,
+        reorderQty: existing.reorderQty,
+      };
     });
-  } catch (err: any) {
-    res.status(500).json({ message: err.message });
+
+    res.status(201).json(result);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Insufficient stock")) {
+      return res.status(400).json({ message: error.message });
+    }
+    throw error;
   }
 });
 
-// POST /api/inventory/adjust
 router.post("/adjust", async (req: Request, res: Response) => {
-  const { partId, locationId, newQty, reason, performedBy, notes } = req.body;
-  if (!partId || !locationId || newQty == null || newQty < 0) {
-    return res.status(400).json({ message: "partId, locationId, and non-negative newQty required" });
+  const parsed = inventoryAdjustSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendValidationError(res, formatZodError(parsed.error));
   }
 
-  try {
-    const existing = await db
-      .select()
-      .from(inventoryLevels)
-      .where(and(eq(inventoryLevels.partId, partId), eq(inventoryLevels.locationId, locationId)));
+  const result = db.transaction((tx) => {
+    const existing = getInventoryLevel(tx, parsed.data.partId, parsed.data.locationId);
+    const oldQty = existing?.qtyOnHand ?? 0;
+    const delta = parsed.data.newQty - oldQty;
 
-    const oldQty = existing.length > 0 ? existing[0].qtyOnHand : 0;
-    const delta = newQty - oldQty;
-
-    if (existing.length > 0) {
-      await db
+    if (existing) {
+      tx
         .update(inventoryLevels)
-        .set({ qtyOnHand: newQty, updatedAt: sql`datetime('now')` })
-        .where(eq(inventoryLevels.id, existing[0].id));
+        .set({ qtyOnHand: parsed.data.newQty, updatedAt: sql`datetime('now')` })
+        .where(eq(inventoryLevels.id, existing.id));
     } else {
-      await db.insert(inventoryLevels).values({
-        partId,
-        locationId,
-        qtyOnHand: newQty,
+      tx.insert(inventoryLevels).values({
+        partId: parsed.data.partId,
+        locationId: parsed.data.locationId,
+        qtyOnHand: parsed.data.newQty,
       });
     }
 
-    const txn = await db.insert(stockTransactions).values({
-      partId,
-      locationId,
-      type: "adjustment",
-      qty: delta,
-      reason: reason || "cycle count",
-      performedBy: performedBy || null,
-      notes: notes || `Adjusted from ${oldQty} to ${newQty}`,
-      qtyAfter: newQty,
-    }).returning();
+    const transaction = tx
+      .insert(stockTransactions)
+      .values({
+        partId: parsed.data.partId,
+        locationId: parsed.data.locationId,
+        type: "adjustment",
+        qty: delta,
+        reason: parsed.data.reason || "cycle count",
+        performedBy: parsed.data.performedBy,
+        notes: parsed.data.notes || `Adjusted from ${oldQty} to ${parsed.data.newQty}`,
+        qtyAfter: parsed.data.newQty,
+      })
+      .returning()
+      .get();
 
-    res.status(201).json({ transaction: txn[0], oldQty, qtyAfter: newQty });
-  } catch (err: any) {
-    res.status(500).json({ message: err.message });
-  }
+    return {
+      transaction,
+      oldQty,
+      qtyAfter: parsed.data.newQty,
+    };
+  });
+
+  res.status(201).json(result);
 });
 
 export default router;

@@ -84,6 +84,22 @@ export interface WeekData {
   teamMembers: TeamMember[];
 }
 
+export interface CapacitySaveInput {
+  id?: number;
+  teamMemberId: number;
+  date: string;
+  projectId: number | null;
+  activityId: number | null;
+  locationId: number | null;
+  comment: string | null;
+  nightShift: boolean;
+}
+
+export interface CapacitySaveResponse {
+  saved: number;
+  entries: Array<Pick<CapacityEntry, "id" | "teamMemberId" | "date">>;
+}
+
 // ── Hooks ─────────────────────────────────────────────────────
 
 export function useWeekCapacity(weekStart: string) {
@@ -245,8 +261,8 @@ export function useProjectSearch(query: string) {
 
 export function useSaveCapacity() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (entries: any[]) => {
+  return useMutation<CapacitySaveResponse, Error, CapacitySaveInput[]>({
+    mutationFn: async (entries) => {
       const res = await apiRequest("PUT", "/api/capacity/bulk", { entries });
       return res.json();
     },

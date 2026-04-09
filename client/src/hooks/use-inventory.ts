@@ -101,6 +101,51 @@ export interface PartSearchResult {
   suggestions: Part[];
 }
 
+export interface CreatePartInput {
+  partNumber: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  unitOfMeasure?: string | null;
+  preferredVendor?: string | null;
+  manufacturer?: string | null;
+  manufacturerPartNumber?: string | null;
+  cost?: number | null;
+  source?: "manual" | "qb_sync";
+  active?: boolean;
+}
+
+export interface CreateStorageLocationInput {
+  warehouse: string;
+  shelf?: string | null;
+  bin?: string | null;
+  label?: string | null;
+  active?: boolean;
+}
+
+export interface BookInInput {
+  partId: number;
+  locationId: number;
+  qty: number;
+  reason?: string | null;
+  projectId?: number | null;
+  performedBy?: number | null;
+  notes?: string | null;
+}
+
+export interface BookOutInput extends BookInInput {
+  shelfQtyRemaining?: number;
+}
+
+export interface AdjustStockInput {
+  partId: number;
+  locationId: number;
+  newQty: number;
+  reason?: string | null;
+  performedBy?: number | null;
+  notes?: string | null;
+}
+
 // ── Query Hooks ───────────────────────────────────────────────
 
 export function useParts(activeOnly = true) {
@@ -163,7 +208,7 @@ export function useTransactions(filters?: { partId?: number; limit?: number }) {
 export function useCreatePart() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Partial<Part>) => {
+    mutationFn: async (data: CreatePartInput) => {
       const res = await apiRequest("POST", "/api/parts", data);
       return res.json();
     },
@@ -176,7 +221,7 @@ export function useCreatePart() {
 export function useUpdatePart() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...data }: Partial<Part> & { id: number }) => {
+    mutationFn: async ({ id, ...data }: Partial<CreatePartInput> & { id: number }) => {
       const res = await apiRequest("PUT", `/api/parts/${id}`, data);
       return res.json();
     },
@@ -189,7 +234,7 @@ export function useUpdatePart() {
 export function useCreateLocation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: Partial<StorageLocation>) => {
+    mutationFn: async (data: CreateStorageLocationInput) => {
       const res = await apiRequest("POST", "/api/storage-locations", data);
       return res.json();
     },
@@ -202,15 +247,7 @@ export function useCreateLocation() {
 export function useBookIn() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: {
-      partId: number;
-      locationId: number;
-      qty: number;
-      reason?: string;
-      projectId?: number;
-      performedBy?: number;
-      notes?: string;
-    }) => {
+    mutationFn: async (data: BookInInput) => {
       const res = await apiRequest("POST", "/api/inventory/book-in", data);
       return res.json();
     },
@@ -224,16 +261,7 @@ export function useBookIn() {
 export function useBookOut() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: {
-      partId: number;
-      locationId: number;
-      qty: number;
-      reason?: string;
-      projectId?: number;
-      performedBy?: number;
-      notes?: string;
-      shelfQtyRemaining?: number;
-    }) => {
+    mutationFn: async (data: BookOutInput) => {
       const res = await apiRequest("POST", "/api/inventory/book-out", data);
       return res.json();
     },
@@ -247,14 +275,7 @@ export function useBookOut() {
 export function useAdjustStock() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: {
-      partId: number;
-      locationId: number;
-      newQty: number;
-      reason?: string;
-      performedBy?: number;
-      notes?: string;
-    }) => {
+    mutationFn: async (data: AdjustStockInput) => {
       const res = await apiRequest("POST", "/api/inventory/adjust", data);
       return res.json();
     },

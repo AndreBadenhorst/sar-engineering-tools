@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { Switch, Route, Router, useLocation } from 'wouter';
 import { useHashLocation } from 'wouter/use-hash-location';
 import { queryClient } from './lib/queryClient';
@@ -21,7 +20,7 @@ import About from '@/pages/about';
 
 function PageTitle() {
   const [location] = useLocation();
-  if (location === '/') return <AppHeader title="Engineering Tools" />;
+  if (location === '/') return <AppHeader title="SAR Intranet - Codex" />;
   if (location === '/about') return <AppHeader title="About" />;
   const match = location.match(/^\/tools\/(.+)$/);
   if (match) {
@@ -47,10 +46,6 @@ function AppRouter() {
 }
 
 function App() {
-  useEffect(() => {
-    document.documentElement.classList.add('dark');
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

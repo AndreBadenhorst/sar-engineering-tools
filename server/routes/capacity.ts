@@ -1,60 +1,253 @@
 import { Router, type Request, type Response } from "express";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "../db";
-import { capacityEntries, capacityChangelog, teamMembers, projects, activities, locations } from "@shared/schema";
-import { eq, and, gte, lte, sql, desc } from "drizzle-orm";
+import {
+  activities,
+  capacityChangelog,
+  capacityEntries,
+  locations,
+  projects,
+  teamMembers,
+} from "@shared/schema";
+import {
+  capacityBulkSchema,
+  capacityCreateSchema,
+  capacityUpdateSchema,
+  formatZodError,
+  positiveIdParamSchema,
+} from "../validation";
 
 const router = Router();
 
-// ── Helper: resolve display names for changelog ──────────────
-async function resolveNames(projectId: number | null, activityId: number | null, locationId?: number | null) {
-  let projectNumber: string | null = null;
-  let activityName: string | null = null;
-  let locationName: string | null = null;
+type DbClient = Pick<typeof db, "select" | "insert" | "update" | "delete">;
 
-  if (projectId) {
-    const p = await db.select({ number: projects.number }).from(projects).where(eq(projects.id, projectId)).limit(1);
-    if (p.length) projectNumber = p[0].number;
-  }
-  if (activityId) {
-    const a = await db.select({ name: activities.name }).from(activities).where(eq(activities.id, activityId)).limit(1);
-    if (a.length) activityName = a[0].name;
-  }
-  if (locationId) {
-    const l = await db.select({ name: locations.name }).from(locations).where(eq(locations.id, locationId)).limit(1);
-    if (l.length) locationName = l[0].name;
-  }
-  return { projectNumber, activityName, locationName };
+function sendValidationError(res: Response, details: string[]) {
+  return res.status(400).json({
+    message: "Invalid request",
+    details,
+  });
 }
 
-// ── Helper: log a change ─────────────────────────────────────
-async function logChange(params: {
-  entryId: number | null;
-  teamMemberId: number | null;
-  date: string | null;
-  action: "create" | "update" | "delete";
-  field?: string;
-  oldValue?: string | null;
-  newValue?: string | null;
-  summary: string;
-}) {
-  await db.insert(capacityChangelog).values({
+function getMemberNames(client: DbClient, memberIds: number[]) {
+  const uniqueIds = [...new Set(memberIds)];
+  if (!uniqueIds.length) return new Map<number, string>();
+
+  const rows = client
+    .select({ id: teamMembers.id, name: teamMembers.name })
+    .from(teamMembers)
+    .where(inArray(teamMembers.id, uniqueIds))
+    .all();
+
+  return new Map(rows.map((row) => [row.id, row.name]));
+}
+
+function createNameResolver(client: DbClient) {
+  const projectCache = new Map<number, string | null>();
+  const activityCache = new Map<number, string | null>();
+  const locationCache = new Map<number, string | null>();
+
+  function getProjectNumber(projectId: number | null | undefined) {
+    if (!projectId) return null;
+    if (projectCache.has(projectId)) return projectCache.get(projectId) ?? null;
+
+    const row = client
+      .select({ number: projects.number })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1)
+      .get();
+
+    const projectNumber = row?.number ?? null;
+    projectCache.set(projectId, projectNumber);
+    return projectNumber;
+  }
+
+  function getActivityName(activityId: number | null | undefined) {
+    if (!activityId) return null;
+    if (activityCache.has(activityId)) return activityCache.get(activityId) ?? null;
+
+    const row = client
+      .select({ name: activities.name })
+      .from(activities)
+      .where(eq(activities.id, activityId))
+      .limit(1)
+      .get();
+
+    const activityName = row?.name ?? null;
+    activityCache.set(activityId, activityName);
+    return activityName;
+  }
+
+  function getLocationName(locationId: number | null | undefined) {
+    if (!locationId) return null;
+    if (locationCache.has(locationId)) return locationCache.get(locationId) ?? null;
+
+    const row = client
+      .select({ name: locations.name })
+      .from(locations)
+      .where(eq(locations.id, locationId))
+      .limit(1)
+      .get();
+
+    const locationName = row?.name ?? null;
+    locationCache.set(locationId, locationName);
+    return locationName;
+  }
+
+  return {
+    resolve(projectId: number | null | undefined, activityId: number | null | undefined, locationId?: number | null) {
+      return {
+        projectNumber: getProjectNumber(projectId),
+        activityName: getActivityName(activityId),
+        locationName: getLocationName(locationId),
+      };
+    },
+  };
+}
+
+function logChange(
+  client: DbClient,
+  params: {
+    entryId: number | null;
+    teamMemberId: number | null;
+    date: string | null;
+    action: "create" | "update" | "delete";
+    field?: string;
+    oldValue?: string | null;
+    newValue?: string | null;
+    summary: string;
+  },
+) {
+  client.insert(capacityChangelog).values({
     entryId: params.entryId,
     teamMemberId: params.teamMemberId,
     date: params.date,
     action: params.action,
-    field: params.field || null,
-    oldValue: params.oldValue || null,
-    newValue: params.newValue || null,
+    field: params.field ?? null,
+    oldValue: params.oldValue ?? null,
+    newValue: params.newValue ?? null,
     summary: params.summary,
   });
 }
 
-// GET /api/capacity?week=YYYY-MM-DD
+function createSummary(
+  memberName: string,
+  date: string,
+  names: { projectNumber: string | null; activityName: string | null; locationName: string | null },
+) {
+  return `Created entry for ${memberName} on ${date}${names.projectNumber ? ` - ${names.projectNumber}` : ""}${names.activityName ? ` / ${names.activityName}` : ""}${names.locationName ? ` @ ${names.locationName}` : ""}`;
+}
+
+function createDeleteSummary(
+  memberName: string,
+  date: string,
+  projectNumber: string | null,
+) {
+  return `Deleted ${memberName} on ${date}${projectNumber ? ` - ${projectNumber}` : ""}`;
+}
+
+function logEntryDiffs(
+  client: DbClient,
+  resolver: ReturnType<typeof createNameResolver>,
+  memberName: string,
+  previous: {
+    id: number;
+    teamMemberId: number;
+    projectId: number | null;
+    activityId: number | null;
+    locationId: number | null;
+    comment: string | null;
+    nightShift: boolean;
+    date: string;
+  },
+  next: {
+    id: number;
+    projectId: number | null;
+    activityId: number | null;
+    locationId: number | null;
+    comment: string | null;
+    nightShift: boolean;
+  },
+) {
+  if (previous.projectId !== next.projectId) {
+    const oldNames = resolver.resolve(previous.projectId, null, null);
+    const newNames = resolver.resolve(next.projectId, null, null);
+    logChange(client, {
+      entryId: next.id,
+      teamMemberId: previous.teamMemberId,
+      date: previous.date,
+      action: "update",
+      field: "project",
+      oldValue: oldNames.projectNumber,
+      newValue: newNames.projectNumber,
+      summary: `${memberName} ${previous.date} - project: ${oldNames.projectNumber || "-"} -> ${newNames.projectNumber || "-"}`,
+    });
+  }
+
+  if (previous.activityId !== next.activityId) {
+    const oldNames = resolver.resolve(null, previous.activityId, null);
+    const newNames = resolver.resolve(null, next.activityId, null);
+    logChange(client, {
+      entryId: next.id,
+      teamMemberId: previous.teamMemberId,
+      date: previous.date,
+      action: "update",
+      field: "activity",
+      oldValue: oldNames.activityName,
+      newValue: newNames.activityName,
+      summary: `${memberName} ${previous.date} - activity: ${oldNames.activityName || "-"} -> ${newNames.activityName || "-"}`,
+    });
+  }
+
+  if (previous.locationId !== next.locationId) {
+    const oldNames = resolver.resolve(null, null, previous.locationId);
+    const newNames = resolver.resolve(null, null, next.locationId);
+    logChange(client, {
+      entryId: next.id,
+      teamMemberId: previous.teamMemberId,
+      date: previous.date,
+      action: "update",
+      field: "location",
+      oldValue: oldNames.locationName,
+      newValue: newNames.locationName,
+      summary: `${memberName} ${previous.date} - location: ${oldNames.locationName || "-"} -> ${newNames.locationName || "-"}`,
+    });
+  }
+
+  if (previous.comment !== next.comment) {
+    logChange(client, {
+      entryId: next.id,
+      teamMemberId: previous.teamMemberId,
+      date: previous.date,
+      action: "update",
+      field: "comment",
+      oldValue: previous.comment,
+      newValue: next.comment,
+      summary: `${memberName} ${previous.date} - comment updated`,
+    });
+  }
+
+  if (previous.nightShift !== next.nightShift) {
+    logChange(client, {
+      entryId: next.id,
+      teamMemberId: previous.teamMemberId,
+      date: previous.date,
+      action: "update",
+      field: "nightShift",
+      oldValue: previous.nightShift ? "yes" : "no",
+      newValue: next.nightShift ? "yes" : "no",
+      summary: `${memberName} ${previous.date} - night shift: ${previous.nightShift ? "yes" : "no"} -> ${next.nightShift ? "yes" : "no"}`,
+    });
+  }
+}
+
 router.get("/", async (req: Request, res: Response) => {
   const weekParam = String(req.query.week || "");
-  if (!weekParam) return res.status(400).json({ message: "week query param required (YYYY-MM-DD)" });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekParam)) {
+    return res.status(400).json({ message: "week query param required (YYYY-MM-DD)" });
+  }
 
-  const date = new Date(weekParam + "T00:00:00");
+  const date = new Date(`${weekParam}T00:00:00`);
   const day = date.getDay();
   const mondayOffset = day === 0 ? -6 : 1 - day;
   const monday = new Date(date);
@@ -65,7 +258,7 @@ router.get("/", async (req: Request, res: Response) => {
   const weekStart = monday.toISOString().split("T")[0];
   const weekEnd = sunday.toISOString().split("T")[0];
 
-  const entries = await db
+  const entries = db
     .select({
       id: capacityEntries.id,
       teamMemberId: capacityEntries.teamMemberId,
@@ -86,307 +279,308 @@ router.get("/", async (req: Request, res: Response) => {
     .leftJoin(projects, eq(capacityEntries.projectId, projects.id))
     .leftJoin(activities, eq(capacityEntries.activityId, activities.id))
     .leftJoin(locations, eq(capacityEntries.locationId, locations.id))
-    .where(
-      and(
-        gte(capacityEntries.date, weekStart),
-        lte(capacityEntries.date, weekEnd),
-      )
-    );
+    .where(and(gte(capacityEntries.date, weekStart), lte(capacityEntries.date, weekEnd)));
 
-  const members = await db.select().from(teamMembers)
+  const members = db
+    .select()
+    .from(teamMembers)
     .where(eq(teamMembers.active, true))
     .orderBy(teamMembers.name);
 
   res.json({ weekStart, weekEnd, entries, teamMembers: members });
 });
 
-// POST /api/capacity
 router.post("/", async (req: Request, res: Response) => {
-  const { teamMemberId, projectId, activityId, locationId, date, comment, nightShift } = req.body;
-  if (!teamMemberId || !date) {
-    return res.status(400).json({ message: "teamMemberId and date are required" });
+  const parsed = capacityCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendValidationError(res, formatZodError(parsed.error));
   }
 
-  const result = await db.insert(capacityEntries).values({
-    teamMemberId,
-    projectId: projectId || null,
-    activityId: activityId || null,
-    locationId: locationId || null,
-    date,
-    comment: comment || null,
-    nightShift: nightShift || false,
-  }).returning();
+  const payload = parsed.data;
+  const entry = db.transaction((tx) => {
+    const inserted = tx
+      .insert(capacityEntries)
+      .values({
+        teamMemberId: payload.teamMemberId,
+        projectId: payload.projectId,
+        activityId: payload.activityId,
+        locationId: payload.locationId,
+        date: payload.date,
+        comment: payload.comment,
+        nightShift: payload.nightShift,
+      })
+      .returning()
+      .get();
 
-  const entry = result[0];
-  const names = await resolveNames(entry.projectId, entry.activityId, entry.locationId);
-  const memberRow = await db.select({ name: teamMembers.name }).from(teamMembers).where(eq(teamMembers.id, teamMemberId)).limit(1);
-  const memberName = memberRow[0]?.name || `#${teamMemberId}`;
+    const memberNames = getMemberNames(tx, [payload.teamMemberId]);
+    const resolver = createNameResolver(tx);
+    const memberName = memberNames.get(payload.teamMemberId) || `#${payload.teamMemberId}`;
 
-  await logChange({
-    entryId: entry.id,
-    teamMemberId,
-    date,
-    action: "create",
-    summary: `Created entry for ${memberName} on ${date}${names.projectNumber ? ` — ${names.projectNumber}` : ""}${names.activityName ? ` / ${names.activityName}` : ""}${names.locationName ? ` @ ${names.locationName}` : ""}`,
+    logChange(tx, {
+      entryId: inserted.id,
+      teamMemberId: payload.teamMemberId,
+      date: payload.date,
+      action: "create",
+      summary: createSummary(memberName, payload.date, resolver.resolve(inserted.projectId, inserted.activityId, inserted.locationId)),
+    });
+
+    return inserted;
   });
 
   res.status(201).json(entry);
 });
 
-// PUT /api/capacity/bulk
 router.put("/bulk", async (req: Request, res: Response) => {
-  const { entries } = req.body;
-  if (!Array.isArray(entries)) {
-    return res.status(400).json({ message: "entries array is required" });
+  const parsed = capacityBulkSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendValidationError(res, formatZodError(parsed.error));
   }
 
-  // Pre-fetch member names for changelog
-  const memberIds = [...new Set(entries.map((e: any) => e.teamMemberId).filter(Boolean))];
-  const memberNames = new Map<number, string>();
-  if (memberIds.length) {
-    const members = await db.select({ id: teamMembers.id, name: teamMembers.name }).from(teamMembers);
-    for (const m of members) memberNames.set(m.id, m.name);
-  }
+  try {
+    const result = db.transaction((tx) => {
+      const resolver = createNameResolver(tx);
+      const memberNames = getMemberNames(
+        tx,
+        parsed.data.entries.map((entry) => entry.teamMemberId),
+      );
+      const savedEntries: Array<{ id: number; teamMemberId: number; date: string }> = [];
 
-  const results = [];
-  for (const entry of entries) {
-    if (entry.id) {
-      // Fetch old values for diff
-      const oldRows = await db.select().from(capacityEntries).where(eq(capacityEntries.id, entry.id)).limit(1);
-      const old = oldRows[0];
+      for (const entry of parsed.data.entries) {
+        if (entry.id) {
+          const previous = tx
+            .select()
+            .from(capacityEntries)
+            .where(eq(capacityEntries.id, entry.id))
+            .limit(1)
+            .get();
 
-      // Update existing
-      const updated = await db.update(capacityEntries)
-        .set({
-          projectId: entry.projectId || null,
-          activityId: entry.activityId || null,
-          locationId: entry.locationId || null,
-          comment: entry.comment || null,
-          nightShift: entry.nightShift ?? false,
-          updatedAt: sql`datetime('now')`,
-        })
-        .where(eq(capacityEntries.id, entry.id))
-        .returning();
-
-      if (updated.length) {
-        results.push(updated[0]);
-
-        // Log field-level diffs
-        if (old) {
-          const memberName = memberNames.get(old.teamMemberId) || `#${old.teamMemberId}`;
-          const changes: string[] = [];
-
-          if ((entry.projectId || null) !== old.projectId) {
-            const oldNames = await resolveNames(old.projectId, null);
-            const newNames = await resolveNames(entry.projectId || null, null);
-            changes.push(`project: ${oldNames.projectNumber || "—"} → ${newNames.projectNumber || "—"}`);
-            await logChange({
-              entryId: entry.id,
-              teamMemberId: old.teamMemberId,
-              date: old.date,
-              action: "update",
-              field: "project",
-              oldValue: oldNames.projectNumber,
-              newValue: newNames.projectNumber,
-              summary: `${memberName} ${old.date} — project: ${oldNames.projectNumber || "—"} → ${newNames.projectNumber || "—"}`,
-            });
+          if (!previous) {
+            throw new Error(`Capacity entry ${entry.id} not found`);
           }
 
-          if ((entry.activityId || null) !== old.activityId) {
-            const oldNames = await resolveNames(null, old.activityId);
-            const newNames = await resolveNames(null, entry.activityId || null);
-            changes.push(`activity: ${oldNames.activityName || "—"} → ${newNames.activityName || "—"}`);
-            await logChange({
-              entryId: entry.id,
-              teamMemberId: old.teamMemberId,
-              date: old.date,
-              action: "update",
-              field: "activity",
-              oldValue: oldNames.activityName,
-              newValue: newNames.activityName,
-              summary: `${memberName} ${old.date} — activity: ${oldNames.activityName || "—"} → ${newNames.activityName || "—"}`,
-            });
-          }
+          const updated = tx
+            .update(capacityEntries)
+            .set({
+              projectId: entry.projectId,
+              activityId: entry.activityId,
+              locationId: entry.locationId,
+              comment: entry.comment,
+              nightShift: entry.nightShift,
+              updatedAt: sql`datetime('now')`,
+            })
+            .where(eq(capacityEntries.id, entry.id))
+            .returning()
+            .get();
 
-          if ((entry.locationId || null) !== old.locationId) {
-            const oldNames = await resolveNames(null, null, old.locationId);
-            const newNames = await resolveNames(null, null, entry.locationId || null);
-            changes.push(`location: ${oldNames.locationName || "—"} → ${newNames.locationName || "—"}`);
-            await logChange({
-              entryId: entry.id,
-              teamMemberId: old.teamMemberId,
-              date: old.date,
-              action: "update",
-              field: "location",
-              oldValue: oldNames.locationName,
-              newValue: newNames.locationName,
-              summary: `${memberName} ${old.date} — location: ${oldNames.locationName || "—"} → ${newNames.locationName || "—"}`,
-            });
-          }
+          const memberName = memberNames.get(previous.teamMemberId) || `#${previous.teamMemberId}`;
+          logEntryDiffs(
+            tx,
+            resolver,
+            memberName,
+            {
+              id: previous.id,
+              teamMemberId: previous.teamMemberId,
+              projectId: previous.projectId,
+              activityId: previous.activityId,
+              locationId: previous.locationId,
+              comment: previous.comment,
+              nightShift: !!previous.nightShift,
+              date: previous.date,
+            },
+            {
+              id: updated.id,
+              projectId: updated.projectId,
+              activityId: updated.activityId,
+              locationId: updated.locationId,
+              comment: updated.comment,
+              nightShift: !!updated.nightShift,
+            },
+          );
 
-          if ((entry.comment || null) !== old.comment) {
-            await logChange({
-              entryId: entry.id,
-              teamMemberId: old.teamMemberId,
-              date: old.date,
-              action: "update",
-              field: "comment",
-              oldValue: old.comment,
-              newValue: entry.comment || null,
-              summary: `${memberName} ${old.date} — comment: "${old.comment || ""}" → "${entry.comment || ""}"`,
-            });
-          }
-
-          const oldNight = !!old.nightShift;
-          const newNight = !!(entry.nightShift ?? false);
-          if (newNight !== oldNight) {
-            await logChange({
-              entryId: entry.id,
-              teamMemberId: old.teamMemberId,
-              date: old.date,
-              action: "update",
-              field: "nightShift",
-              oldValue: oldNight ? "yes" : "no",
-              newValue: newNight ? "yes" : "no",
-              summary: `${memberName} ${old.date} — night shift: ${oldNight ? "yes" : "no"} → ${newNight ? "yes" : "no"}`,
-            });
-          }
+          savedEntries.push({
+            id: updated.id,
+            teamMemberId: updated.teamMemberId,
+            date: updated.date,
+          });
+          continue;
         }
+
+        const inserted = tx
+          .insert(capacityEntries)
+          .values({
+            teamMemberId: entry.teamMemberId,
+            projectId: entry.projectId,
+            activityId: entry.activityId,
+            locationId: entry.locationId,
+            date: entry.date,
+            comment: entry.comment,
+            nightShift: entry.nightShift,
+          })
+          .returning()
+          .get();
+
+        const memberName = memberNames.get(entry.teamMemberId) || `#${entry.teamMemberId}`;
+        logChange(tx, {
+          entryId: inserted.id,
+          teamMemberId: entry.teamMemberId,
+          date: entry.date,
+          action: "create",
+          summary: createSummary(memberName, entry.date, resolver.resolve(inserted.projectId, inserted.activityId, inserted.locationId)),
+        });
+
+        savedEntries.push({
+          id: inserted.id,
+          teamMemberId: inserted.teamMemberId,
+          date: inserted.date,
+        });
       }
-    } else if (entry.teamMemberId && entry.date) {
-      // Insert new
-      const inserted = await db.insert(capacityEntries).values({
-        teamMemberId: entry.teamMemberId,
-        projectId: entry.projectId || null,
-        activityId: entry.activityId || null,
-        locationId: entry.locationId || null,
-        date: entry.date,
-        comment: entry.comment || null,
-        nightShift: entry.nightShift ?? false,
-      }).returning();
 
-      const newEntry = inserted[0];
-      results.push(newEntry);
+      return {
+        saved: savedEntries.length,
+        entries: savedEntries,
+      };
+    });
 
-      const memberName = memberNames.get(entry.teamMemberId) || `#${entry.teamMemberId}`;
-      const names = await resolveNames(entry.projectId || null, entry.activityId || null, entry.locationId || null);
-
-      await logChange({
-        entryId: newEntry.id,
-        teamMemberId: entry.teamMemberId,
-        date: entry.date,
-        action: "create",
-        summary: `Created ${memberName} on ${entry.date}${names.projectNumber ? ` — ${names.projectNumber}` : ""}${names.activityName ? ` / ${names.activityName}` : ""}${names.locationName ? ` @ ${names.locationName}` : ""}`,
-      });
+    res.json(result);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("not found")) {
+      return res.status(404).json({ message: error.message });
     }
+    throw error;
   }
-
-  res.json({ saved: results.length, entries: results });
 });
 
-// PUT /api/capacity/:id
 router.put("/:id", async (req: Request, res: Response) => {
-  const id = Number(req.params.id);
-  const { projectId, activityId, locationId, comment, nightShift } = req.body;
-
-  const oldRows = await db.select().from(capacityEntries).where(eq(capacityEntries.id, id)).limit(1);
-  if (!oldRows.length) return res.status(404).json({ message: "Not found" });
-  const old = oldRows[0];
-
-  const result = await db.update(capacityEntries)
-    .set({
-      ...(projectId !== undefined && { projectId }),
-      ...(activityId !== undefined && { activityId }),
-      ...(locationId !== undefined && { locationId }),
-      ...(comment !== undefined && { comment }),
-      ...(nightShift !== undefined && { nightShift }),
-      updatedAt: sql`datetime('now')`,
-    })
-    .where(eq(capacityEntries.id, id))
-    .returning();
-
-  if (!result.length) return res.status(404).json({ message: "Not found" });
-
-  const memberRow = await db.select({ name: teamMembers.name }).from(teamMembers).where(eq(teamMembers.id, old.teamMemberId)).limit(1);
-  const memberName = memberRow[0]?.name || `#${old.teamMemberId}`;
-
-  if (projectId !== undefined && projectId !== old.projectId) {
-    const oldNames = await resolveNames(old.projectId, null);
-    const newNames = await resolveNames(projectId, null);
-    await logChange({
-      entryId: id, teamMemberId: old.teamMemberId, date: old.date, action: "update",
-      field: "project", oldValue: oldNames.projectNumber, newValue: newNames.projectNumber,
-      summary: `${memberName} ${old.date} — project: ${oldNames.projectNumber || "—"} → ${newNames.projectNumber || "—"}`,
-    });
-  }
-  if (activityId !== undefined && activityId !== old.activityId) {
-    const oldNames = await resolveNames(null, old.activityId);
-    const newNames = await resolveNames(null, activityId);
-    await logChange({
-      entryId: id, teamMemberId: old.teamMemberId, date: old.date, action: "update",
-      field: "activity", oldValue: oldNames.activityName, newValue: newNames.activityName,
-      summary: `${memberName} ${old.date} — activity: ${oldNames.activityName || "—"} → ${newNames.activityName || "—"}`,
-    });
-  }
-  if (locationId !== undefined && locationId !== old.locationId) {
-    const oldNames = await resolveNames(null, null, old.locationId);
-    const newNames = await resolveNames(null, null, locationId);
-    await logChange({
-      entryId: id, teamMemberId: old.teamMemberId, date: old.date, action: "update",
-      field: "location", oldValue: oldNames.locationName, newValue: newNames.locationName,
-      summary: `${memberName} ${old.date} — location: ${oldNames.locationName || "—"} → ${newNames.locationName || "—"}`,
-    });
-  }
-  if (comment !== undefined && comment !== old.comment) {
-    await logChange({
-      entryId: id, teamMemberId: old.teamMemberId, date: old.date, action: "update",
-      field: "comment", oldValue: old.comment, newValue: comment,
-      summary: `${memberName} ${old.date} — comment: "${old.comment || ""}" → "${comment || ""}"`,
-    });
+  const parsedId = positiveIdParamSchema.safeParse({ id: Number(req.params.id) });
+  if (!parsedId.success) {
+    return sendValidationError(res, formatZodError(parsedId.error));
   }
 
-  res.json(result[0]);
+  const parsedBody = capacityUpdateSchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    return sendValidationError(res, formatZodError(parsedBody.error));
+  }
+
+  const id = parsedId.data.id;
+  const payload = parsedBody.data;
+
+  const updated = db.transaction((tx) => {
+    const previous = tx
+      .select()
+      .from(capacityEntries)
+      .where(eq(capacityEntries.id, id))
+      .limit(1)
+      .get();
+
+    if (!previous) {
+      return null;
+    }
+
+    const next = tx
+      .update(capacityEntries)
+      .set({
+        ...(payload.projectId !== undefined && { projectId: payload.projectId }),
+        ...(payload.activityId !== undefined && { activityId: payload.activityId }),
+        ...(payload.locationId !== undefined && { locationId: payload.locationId }),
+        ...(payload.comment !== undefined && { comment: payload.comment }),
+        ...(payload.nightShift !== undefined && { nightShift: payload.nightShift }),
+        updatedAt: sql`datetime('now')`,
+      })
+      .where(eq(capacityEntries.id, id))
+      .returning()
+      .get();
+
+    const memberName =
+      getMemberNames(tx, [previous.teamMemberId]).get(previous.teamMemberId) ||
+      `#${previous.teamMemberId}`;
+    logEntryDiffs(
+      tx,
+      createNameResolver(tx),
+      memberName,
+      {
+        id: previous.id,
+        teamMemberId: previous.teamMemberId,
+        projectId: previous.projectId,
+        activityId: previous.activityId,
+        locationId: previous.locationId,
+        comment: previous.comment,
+        nightShift: !!previous.nightShift,
+        date: previous.date,
+      },
+      {
+        id: next.id,
+        projectId: next.projectId,
+        activityId: next.activityId,
+        locationId: next.locationId,
+        comment: next.comment,
+        nightShift: !!next.nightShift,
+      },
+    );
+
+    return next;
+  });
+
+  if (!updated) {
+    return res.status(404).json({ message: "Not found" });
+  }
+
+  res.json(updated);
 });
 
-// DELETE /api/capacity/:id
 router.delete("/:id", async (req: Request, res: Response) => {
-  const id = Number(req.params.id);
-
-  const oldRows = await db.select().from(capacityEntries).where(eq(capacityEntries.id, id)).limit(1);
-  if (oldRows.length) {
-    const old = oldRows[0];
-    const memberRow = await db.select({ name: teamMembers.name }).from(teamMembers).where(eq(teamMembers.id, old.teamMemberId)).limit(1);
-    const memberName = memberRow[0]?.name || `#${old.teamMemberId}`;
-    const names = await resolveNames(old.projectId, old.activityId);
-
-    await logChange({
-      entryId: id, teamMemberId: old.teamMemberId, date: old.date, action: "delete",
-      summary: `Deleted ${memberName} on ${old.date}${names.projectNumber ? ` — ${names.projectNumber}` : ""}`,
-    });
+  const parsedId = positiveIdParamSchema.safeParse({ id: Number(req.params.id) });
+  if (!parsedId.success) {
+    return sendValidationError(res, formatZodError(parsedId.error));
   }
 
-  await db.delete(capacityEntries).where(eq(capacityEntries.id, id));
+  db.transaction((tx) => {
+    const existing = tx
+      .select()
+      .from(capacityEntries)
+      .where(eq(capacityEntries.id, parsedId.data.id))
+      .limit(1)
+      .get();
+
+    if (!existing) {
+      return;
+    }
+
+    const memberName =
+      getMemberNames(tx, [existing.teamMemberId]).get(existing.teamMemberId) ||
+      `#${existing.teamMemberId}`;
+    const projectNumber = createNameResolver(tx).resolve(existing.projectId, null, null).projectNumber;
+
+    logChange(tx, {
+      entryId: existing.id,
+      teamMemberId: existing.teamMemberId,
+      date: existing.date,
+      action: "delete",
+      summary: createDeleteSummary(memberName, existing.date, projectNumber),
+    });
+
+    tx.delete(capacityEntries).where(eq(capacityEntries.id, parsedId.data.id));
+  });
+
   res.json({ success: true });
 });
 
-// ── Changelog endpoint ───────────────────────────────────────
-// GET /api/capacity/changelog?limit=50&offset=0
 router.get("/changelog", async (req: Request, res: Response) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const offset = Number(req.query.offset) || 0;
 
-  const logs = await db
+  const logs = db
     .select()
     .from(capacityChangelog)
     .orderBy(desc(capacityChangelog.createdAt))
     .limit(limit)
     .offset(offset);
 
-  const total = await db
+  const total = db
     .select({ count: sql<number>`count(*)` })
-    .from(capacityChangelog);
+    .from(capacityChangelog)
+    .get();
 
-  res.json({ logs, total: total[0].count, limit, offset });
+  res.json({ logs, total: total?.count ?? 0, limit, offset });
 });
 
 export default router;
