@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 // ── Job Function enum ────────────────────────────────────────
@@ -113,24 +113,48 @@ export const capacityChangelog = sqliteTable("capacity_changelog", {
 // INVENTORY MODULE
 // ══════════════════════════════════════════════════════════════
 
-// ── Parts (maps to QB Non-Inventory Part) ─────────────────────
+// ── Parts (master catalog — source of truth for SAR) ──────────
 export const parts = sqliteTable("parts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  partNumber: text("part_number").notNull().unique(),
-  name: text("name").notNull(),
-  description: text("description"),
-  category: text("category"),                // e.g. "Electrical", "Mechanical", "Fastener"
-  unitOfMeasure: text("unit_of_measure"),     // "EA", "FT", "BOX", etc.
-  preferredVendor: text("preferred_vendor"),
-  manufacturer: text("manufacturer"),
-  manufacturerPartNumber: text("manufacturer_part_number"),
-  cost: integer("cost"),                      // cost in cents (avoid float issues)
-  source: text("source", { enum: ["manual", "qb_sync"] }).notNull().default("manual"),
+  partNumber: text("part_number").notNull().unique(),  // SAR convention: PREFIX.mfr-part e.g. "SIE.7KM3220-0BA01-1DA0"
+  name: text("name").notNull(),                        // short description
+  description: text("description"),                    // extended description
+  category: text("category"),                          // e.g. "Electrical", "Mechanical", "Cable", "Fastener"
+  unitOfMeasure: text("unit_of_measure"),               // "EA", "$/m", "/m", "BOX", etc.
+  // ── Vendor / Manufacturer ────────────────────
+  preferredVendor: text("preferred_vendor"),            // supplier name (Wesco, McNaughton-McKay, etc.)
+  manufacturer: text("manufacturer"),                  // mfr name (Siemens, Rittal, etc.)
+  manufacturerPartNumber: text("manufacturer_part_number"), // raw mfr part without SAR prefix
+  // ── Pricing ──────────────────────────────────
+  cost: integer("cost"),                               // default cost in cents (fallback price)
+  // ── Install times (for calc sheet labor estimates) ──
+  installMinPerMeter: real("install_min_per_meter"),         // min/m — cable install rate
+  installMinPerConnection: real("install_min_per_connection"), // min/connection — termination rate
+  // ── Metadata ─────────────────────────────────
+  priceUpdatedAt: text("price_updated_at"),            // date of last price update (YYYY-MM-DD)
+  datasheetUrl: text("datasheet_url"),                 // link to spec/datasheet
+  comments: text("comments"),                          // general notes
+  // ── QB integration (future) ──────────────────
+  qbListId: text("qb_list_id"),                        // QB Desktop Item ListID (immutable)
+  // ── System ───────────────────────────────────
+  source: text("source", { enum: ["manual", "calc_sheet", "qb_sync"] }).notNull().default("manual"),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
-  searchKeywords: text("search_keywords"),    // denormalized blob for fuzzy search
+  searchKeywords: text("search_keywords"),              // denormalized for fuzzy search
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
 });
+
+// ── Part Prices (customer-specific pricing) ──────────────────
+// Flexible: any number of customers, no schema change to add one
+export const partPrices = sqliteTable("part_prices", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  partId: integer("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
+  customerName: text("customer_name").notNull(),       // "BMW", "GM", "Volvo", "GENERAL", "Default"
+  price: integer("price"),                             // cents
+  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+}, (table) => [
+  uniqueIndex("part_prices_part_customer").on(table.partId, table.customerName),
+]);
 
 // ── Storage Locations (warehouse / shelf / bin) ───────────────
 export const storageLocations = sqliteTable("storage_locations", {

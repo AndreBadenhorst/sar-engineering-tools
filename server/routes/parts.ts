@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "../db";
-import { parts, inventoryLevels, storageLocations } from "@shared/schema";
+import { parts, partPrices, inventoryLevels, storageLocations } from "@shared/schema";
 import { eq, and, or, like, sql } from "drizzle-orm";
 
 const router = Router();
@@ -169,7 +169,7 @@ router.get("/search", async (req: Request, res: Response) => {
   });
 });
 
-// GET /api/parts/:id — single part with inventory levels
+// GET /api/parts/:id — single part with inventory levels + customer prices
 router.get("/:id", async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const part = await db.select().from(parts).where(eq(parts.id, id));
@@ -191,7 +191,13 @@ router.get("/:id", async (req: Request, res: Response) => {
     .leftJoin(storageLocations, eq(inventoryLevels.locationId, storageLocations.id))
     .where(eq(inventoryLevels.partId, id));
 
-  res.json({ ...part[0], inventory: levels });
+  const prices = await db
+    .select()
+    .from(partPrices)
+    .where(eq(partPrices.partId, id))
+    .orderBy(partPrices.customerName);
+
+  res.json({ ...part[0], inventory: levels, prices });
 });
 
 // POST /api/parts
@@ -199,6 +205,7 @@ router.post("/", async (req: Request, res: Response) => {
   const {
     partNumber, name, description, category, unitOfMeasure,
     preferredVendor, manufacturer, manufacturerPartNumber, cost, source, active,
+    installMinPerMeter, installMinPerConnection, priceUpdatedAt, datasheetUrl, comments,
   } = req.body;
   if (!partNumber || !name) {
     return res.status(400).json({ message: "partNumber and name are required" });
@@ -219,6 +226,11 @@ router.post("/", async (req: Request, res: Response) => {
     manufacturer: manufacturer || null,
     manufacturerPartNumber: manufacturerPartNumber || null,
     cost: cost != null ? cost : null,
+    installMinPerMeter: installMinPerMeter ?? null,
+    installMinPerConnection: installMinPerConnection ?? null,
+    priceUpdatedAt: priceUpdatedAt || null,
+    datasheetUrl: datasheetUrl || null,
+    comments: comments || null,
     source: source || "manual",
     active: active !== undefined ? active : true,
     searchKeywords,
@@ -233,6 +245,7 @@ router.put("/:id", async (req: Request, res: Response) => {
   const {
     partNumber, name, description, category, unitOfMeasure,
     preferredVendor, manufacturer, manufacturerPartNumber, cost, source, active,
+    installMinPerMeter, installMinPerConnection, priceUpdatedAt, datasheetUrl, comments,
   } = req.body;
 
   // Rebuild search keywords if relevant fields changed
@@ -268,6 +281,11 @@ router.put("/:id", async (req: Request, res: Response) => {
       ...(cost !== undefined && { cost }),
       ...(source !== undefined && { source }),
       ...(active !== undefined && { active }),
+      ...(installMinPerMeter !== undefined && { installMinPerMeter }),
+      ...(installMinPerConnection !== undefined && { installMinPerConnection }),
+      ...(priceUpdatedAt !== undefined && { priceUpdatedAt }),
+      ...(datasheetUrl !== undefined && { datasheetUrl }),
+      ...(comments !== undefined && { comments }),
       ...(searchKeywords !== undefined && { searchKeywords }),
       updatedAt: sql`datetime('now')`,
     })
@@ -288,6 +306,86 @@ router.delete("/:id", async (req: Request, res: Response) => {
     .returning();
   if (!result.length) return res.status(404).json({ message: "Not found" });
   res.json(result[0]);
+});
+
+// ══════════════════════════════════════════════════════════════
+// PART PRICES — customer-specific pricing
+// ══════════════════════════════════════════════════════════════
+
+// GET /api/parts/:id/prices — all customer prices for a part
+router.get("/:id/prices", async (req: Request, res: Response) => {
+  const partId = Number(req.params.id);
+  const prices = await db
+    .select()
+    .from(partPrices)
+    .where(eq(partPrices.partId, partId))
+    .orderBy(partPrices.customerName);
+  res.json(prices);
+});
+
+// PUT /api/parts/:id/prices — bulk upsert prices for a part
+// Body: { prices: [{ customerName: "BMW", price: 12500 }, ...] }
+router.put("/:id/prices", async (req: Request, res: Response) => {
+  const partId = Number(req.params.id);
+  const { prices } = req.body as { prices: { customerName: string; price: number | null }[] };
+
+  if (!Array.isArray(prices)) {
+    return res.status(400).json({ message: "prices array is required" });
+  }
+
+  const raw = db.$client;
+  const upsert = raw.prepare(`
+    INSERT INTO part_prices (part_id, customer_name, price, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(part_id, customer_name) DO UPDATE SET
+      price = excluded.price,
+      updated_at = datetime('now')
+  `);
+
+  const tx = raw.transaction(() => {
+    for (const p of prices) {
+      if (!p.customerName) continue;
+      upsert.run(partId, p.customerName, p.price);
+    }
+  });
+  tx();
+
+  // Return updated prices
+  const updated = await db
+    .select()
+    .from(partPrices)
+    .where(eq(partPrices.partId, partId))
+    .orderBy(partPrices.customerName);
+  res.json(updated);
+});
+
+// GET /api/parts/customers — distinct customer names across all prices
+router.get("/customers/list", async (_req: Request, res: Response) => {
+  const rows = await db
+    .selectDistinct({ customerName: partPrices.customerName })
+    .from(partPrices)
+    .orderBy(partPrices.customerName);
+  res.json(rows.map((r) => r.customerName));
+});
+
+// GET /api/parts/manufacturers — distinct manufacturer list
+router.get("/manufacturers/list", async (_req: Request, res: Response) => {
+  const rows = await db
+    .selectDistinct({ manufacturer: parts.manufacturer })
+    .from(parts)
+    .where(and(eq(parts.active, true), sql`${parts.manufacturer} IS NOT NULL`))
+    .orderBy(parts.manufacturer);
+  res.json(rows.map((r) => r.manufacturer).filter(Boolean));
+});
+
+// GET /api/parts/vendors/list — distinct vendor/supplier list
+router.get("/vendors/list", async (_req: Request, res: Response) => {
+  const rows = await db
+    .selectDistinct({ vendor: parts.preferredVendor })
+    .from(parts)
+    .where(and(eq(parts.active, true), sql`${parts.preferredVendor} IS NOT NULL`))
+    .orderBy(parts.preferredVendor);
+  res.json(rows.map((r) => r.vendor).filter(Boolean));
 });
 
 export default router;
