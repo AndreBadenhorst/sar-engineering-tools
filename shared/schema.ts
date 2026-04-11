@@ -125,8 +125,24 @@ export const parts = sqliteTable("parts", {
   preferredVendor: text("preferred_vendor"),            // supplier name (Wesco, McNaughton-McKay, etc.)
   manufacturer: text("manufacturer"),                  // mfr name (Siemens, Rittal, etc.)
   manufacturerPartNumber: text("manufacturer_part_number"), // raw mfr part without SAR prefix
-  // ── Pricing ──────────────────────────────────
-  cost: integer("cost"),                               // default cost in cents (fallback price)
+  // ── Classification ────────────────────────────
+  partType: text("part_type", { enum: ["purchased", "manufactured", "sub_assembly", "raw_material", "service", "consumable"] }).default("purchased"),
+  // ── Pricing / Costing ───────────────────────
+  cost: integer("cost"),                               // default/standard cost in cents
+  lastCost: integer("last_cost"),                      // most recent purchase cost in cents
+  averageCost: integer("average_cost"),                // running average cost in cents
+  // ── Purchasing ──────────────────────────────
+  supplierPartNumber: text("supplier_part_number"),    // vendor's own part # (goes on POs)
+  leadTimeDays: integer("lead_time_days"),             // purchasing lead time in days
+  moq: integer("moq"),                                // minimum order quantity
+  orderMultiple: integer("order_multiple"),            // pack size / order multiple
+  safetyStock: integer("safety_stock"),                // min stock level before reorder
+  reorderQty: integer("reorder_qty"),                  // default reorder quantity
+  // ── Engineering ─────────────────────────────
+  drawingNumber: text("drawing_number"),               // engineering drawing reference
+  revision: text("revision"),                          // current revision (A, B, 01, etc.)
+  weight: real("weight"),                              // weight value
+  weightUom: text("weight_uom"),                       // kg, lb, g
   // ── Install times (for calc sheet labor estimates) ──
   installMinPerMeter: real("install_min_per_meter"),         // min/m — cable install rate
   installMinPerConnection: real("install_min_per_connection"), // min/connection — termination rate
@@ -134,6 +150,12 @@ export const parts = sqliteTable("parts", {
   priceUpdatedAt: text("price_updated_at"),            // date of last price update (YYYY-MM-DD)
   datasheetUrl: text("datasheet_url"),                 // link to spec/datasheet
   comments: text("comments"),                          // general notes
+  countryOfOrigin: text("country_of_origin"),          // for customs (DE, US, CN, etc.)
+  hsCode: text("hs_code"),                             // harmonized system tariff code
+  inspectionRequired: integer("inspection_required", { mode: "boolean" }).default(false),
+  lotTracked: integer("lot_tracked", { mode: "boolean" }).default(false),
+  serialTracked: integer("serial_tracked", { mode: "boolean" }).default(false),
+  shelfLifeDays: integer("shelf_life_days"),           // expiry tracking for adhesives, paste, etc.
   // ── QB integration (future) ──────────────────
   qbListId: text("qb_list_id"),                        // QB Desktop Item ListID (immutable)
   // ── System ───────────────────────────────────

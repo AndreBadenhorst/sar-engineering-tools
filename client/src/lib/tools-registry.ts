@@ -1,4 +1,4 @@
-import { Train, Calculator, Zap, Cable, CalendarDays, FolderKanban, Package, ScanBarcode } from "lucide-react";
+import { Train, Calculator, Zap, Cable, CalendarDays, FolderKanban, Package, ScanBarcode, BookOpen } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface ToolDefinition {
@@ -40,6 +40,16 @@ export const tools: ToolDefinition[] = [
     description: 'View and manage all projects — filter by status, source, and search. Toggle active/inactive status.',
     icon: FolderKanban,
     path: '/tools/project-list',
+    category: 'general',
+    status: 'active',
+  },
+  {
+    id: 'parts-catalog',
+    name: 'Parts Catalog',
+    shortName: 'Parts',
+    description: 'Browse, search, and manage the parts database — customer pricing, install times, datasheets, and manufacturer/vendor filters.',
+    icon: BookOpen,
+    path: '/tools/parts-catalog',
     category: 'general',
     status: 'active',
   },

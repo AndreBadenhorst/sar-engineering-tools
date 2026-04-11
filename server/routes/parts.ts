@@ -202,37 +202,53 @@ router.get("/:id", async (req: Request, res: Response) => {
 
 // POST /api/parts
 router.post("/", async (req: Request, res: Response) => {
-  const {
-    partNumber, name, description, category, unitOfMeasure,
-    preferredVendor, manufacturer, manufacturerPartNumber, cost, source, active,
-    installMinPerMeter, installMinPerConnection, priceUpdatedAt, datasheetUrl, comments,
-  } = req.body;
-  if (!partNumber || !name) {
+  const b = req.body;
+  if (!b.partNumber || !b.name) {
     return res.status(400).json({ message: "partNumber and name are required" });
   }
 
   const searchKeywords = buildSearchKeywords({
-    partNumber, name, description, category, preferredVendor,
-    manufacturer, manufacturerPartNumber,
+    partNumber: b.partNumber, name: b.name, description: b.description,
+    category: b.category, preferredVendor: b.preferredVendor,
+    manufacturer: b.manufacturer, manufacturerPartNumber: b.manufacturerPartNumber,
   });
 
   const result = await db.insert(parts).values({
-    partNumber,
-    name,
-    description: description || null,
-    category: category || null,
-    unitOfMeasure: unitOfMeasure || null,
-    preferredVendor: preferredVendor || null,
-    manufacturer: manufacturer || null,
-    manufacturerPartNumber: manufacturerPartNumber || null,
-    cost: cost != null ? cost : null,
-    installMinPerMeter: installMinPerMeter ?? null,
-    installMinPerConnection: installMinPerConnection ?? null,
-    priceUpdatedAt: priceUpdatedAt || null,
-    datasheetUrl: datasheetUrl || null,
-    comments: comments || null,
-    source: source || "manual",
-    active: active !== undefined ? active : true,
+    partNumber: b.partNumber,
+    name: b.name,
+    description: b.description || null,
+    category: b.category || null,
+    unitOfMeasure: b.unitOfMeasure || null,
+    preferredVendor: b.preferredVendor || null,
+    manufacturer: b.manufacturer || null,
+    manufacturerPartNumber: b.manufacturerPartNumber || null,
+    cost: b.cost ?? null,
+    partType: b.partType || "purchased",
+    lastCost: b.lastCost ?? null,
+    averageCost: b.averageCost ?? null,
+    supplierPartNumber: b.supplierPartNumber || null,
+    leadTimeDays: b.leadTimeDays ?? null,
+    moq: b.moq ?? null,
+    orderMultiple: b.orderMultiple ?? null,
+    safetyStock: b.safetyStock ?? null,
+    reorderQty: b.reorderQty ?? null,
+    drawingNumber: b.drawingNumber || null,
+    revision: b.revision || null,
+    weight: b.weight ?? null,
+    weightUom: b.weightUom || null,
+    installMinPerMeter: b.installMinPerMeter ?? null,
+    installMinPerConnection: b.installMinPerConnection ?? null,
+    priceUpdatedAt: b.priceUpdatedAt || null,
+    datasheetUrl: b.datasheetUrl || null,
+    comments: b.comments || null,
+    countryOfOrigin: b.countryOfOrigin || null,
+    hsCode: b.hsCode || null,
+    inspectionRequired: b.inspectionRequired ?? false,
+    lotTracked: b.lotTracked ?? false,
+    serialTracked: b.serialTracked ?? false,
+    shelfLifeDays: b.shelfLifeDays ?? null,
+    source: b.source || "manual",
+    active: b.active !== undefined ? b.active : true,
     searchKeywords,
   }).returning();
 
@@ -242,50 +258,64 @@ router.post("/", async (req: Request, res: Response) => {
 // PUT /api/parts/:id
 router.put("/:id", async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const {
-    partNumber, name, description, category, unitOfMeasure,
-    preferredVendor, manufacturer, manufacturerPartNumber, cost, source, active,
-    installMinPerMeter, installMinPerConnection, priceUpdatedAt, datasheetUrl, comments,
-  } = req.body;
+  const b = req.body;
 
   // Rebuild search keywords if relevant fields changed
   let searchKeywords: string | undefined;
-  if (partNumber || name || description !== undefined || category !== undefined ||
-      preferredVendor !== undefined || manufacturer !== undefined || manufacturerPartNumber !== undefined) {
-    // Fetch current to merge
+  if (b.partNumber || b.name || b.description !== undefined || b.category !== undefined ||
+      b.preferredVendor !== undefined || b.manufacturer !== undefined || b.manufacturerPartNumber !== undefined) {
     const current = await db.select().from(parts).where(eq(parts.id, id));
     if (!current.length) return res.status(404).json({ message: "Not found" });
     const c = current[0];
     searchKeywords = buildSearchKeywords({
-      partNumber: partNumber ?? c.partNumber,
-      name: name ?? c.name,
-      description: description !== undefined ? description : c.description,
-      category: category !== undefined ? category : c.category,
-      preferredVendor: preferredVendor !== undefined ? preferredVendor : c.preferredVendor,
-      manufacturer: manufacturer !== undefined ? manufacturer : c.manufacturer,
-      manufacturerPartNumber: manufacturerPartNumber !== undefined ? manufacturerPartNumber : c.manufacturerPartNumber,
+      partNumber: b.partNumber ?? c.partNumber,
+      name: b.name ?? c.name,
+      description: b.description !== undefined ? b.description : c.description,
+      category: b.category !== undefined ? b.category : c.category,
+      preferredVendor: b.preferredVendor !== undefined ? b.preferredVendor : c.preferredVendor,
+      manufacturer: b.manufacturer !== undefined ? b.manufacturer : c.manufacturer,
+      manufacturerPartNumber: b.manufacturerPartNumber !== undefined ? b.manufacturerPartNumber : c.manufacturerPartNumber,
     });
   }
 
   const result = await db
     .update(parts)
     .set({
-      ...(partNumber !== undefined && { partNumber }),
-      ...(name !== undefined && { name }),
-      ...(description !== undefined && { description }),
-      ...(category !== undefined && { category }),
-      ...(unitOfMeasure !== undefined && { unitOfMeasure }),
-      ...(preferredVendor !== undefined && { preferredVendor }),
-      ...(manufacturer !== undefined && { manufacturer }),
-      ...(manufacturerPartNumber !== undefined && { manufacturerPartNumber }),
-      ...(cost !== undefined && { cost }),
-      ...(source !== undefined && { source }),
-      ...(active !== undefined && { active }),
-      ...(installMinPerMeter !== undefined && { installMinPerMeter }),
-      ...(installMinPerConnection !== undefined && { installMinPerConnection }),
-      ...(priceUpdatedAt !== undefined && { priceUpdatedAt }),
-      ...(datasheetUrl !== undefined && { datasheetUrl }),
-      ...(comments !== undefined && { comments }),
+      ...(b.partNumber !== undefined && { partNumber: b.partNumber }),
+      ...(b.name !== undefined && { name: b.name }),
+      ...(b.description !== undefined && { description: b.description }),
+      ...(b.category !== undefined && { category: b.category }),
+      ...(b.unitOfMeasure !== undefined && { unitOfMeasure: b.unitOfMeasure }),
+      ...(b.preferredVendor !== undefined && { preferredVendor: b.preferredVendor }),
+      ...(b.manufacturer !== undefined && { manufacturer: b.manufacturer }),
+      ...(b.manufacturerPartNumber !== undefined && { manufacturerPartNumber: b.manufacturerPartNumber }),
+      ...(b.cost !== undefined && { cost: b.cost }),
+      ...(b.partType !== undefined && { partType: b.partType }),
+      ...(b.lastCost !== undefined && { lastCost: b.lastCost }),
+      ...(b.averageCost !== undefined && { averageCost: b.averageCost }),
+      ...(b.supplierPartNumber !== undefined && { supplierPartNumber: b.supplierPartNumber }),
+      ...(b.leadTimeDays !== undefined && { leadTimeDays: b.leadTimeDays }),
+      ...(b.moq !== undefined && { moq: b.moq }),
+      ...(b.orderMultiple !== undefined && { orderMultiple: b.orderMultiple }),
+      ...(b.safetyStock !== undefined && { safetyStock: b.safetyStock }),
+      ...(b.reorderQty !== undefined && { reorderQty: b.reorderQty }),
+      ...(b.drawingNumber !== undefined && { drawingNumber: b.drawingNumber }),
+      ...(b.revision !== undefined && { revision: b.revision }),
+      ...(b.weight !== undefined && { weight: b.weight }),
+      ...(b.weightUom !== undefined && { weightUom: b.weightUom }),
+      ...(b.source !== undefined && { source: b.source }),
+      ...(b.active !== undefined && { active: b.active }),
+      ...(b.installMinPerMeter !== undefined && { installMinPerMeter: b.installMinPerMeter }),
+      ...(b.installMinPerConnection !== undefined && { installMinPerConnection: b.installMinPerConnection }),
+      ...(b.priceUpdatedAt !== undefined && { priceUpdatedAt: b.priceUpdatedAt }),
+      ...(b.datasheetUrl !== undefined && { datasheetUrl: b.datasheetUrl }),
+      ...(b.comments !== undefined && { comments: b.comments }),
+      ...(b.countryOfOrigin !== undefined && { countryOfOrigin: b.countryOfOrigin }),
+      ...(b.hsCode !== undefined && { hsCode: b.hsCode }),
+      ...(b.inspectionRequired !== undefined && { inspectionRequired: b.inspectionRequired }),
+      ...(b.lotTracked !== undefined && { lotTracked: b.lotTracked }),
+      ...(b.serialTracked !== undefined && { serialTracked: b.serialTracked }),
+      ...(b.shelfLifeDays !== undefined && { shelfLifeDays: b.shelfLifeDays }),
       ...(searchKeywords !== undefined && { searchKeywords }),
       updatedAt: sql`datetime('now')`,
     })

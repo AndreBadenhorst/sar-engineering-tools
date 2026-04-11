@@ -14,6 +14,7 @@ import Home from '@/pages/home';
 import RailcutSizing from '@/pages/railcut-sizing';
 import CapacityPlanner from '@/pages/capacity-planner';
 import ProjectList from '@/pages/project-list';
+import PartsCatalog from '@/pages/parts-catalog';
 import Inventory from '@/pages/inventory';
 import StockBooking from '@/pages/stock-booking';
 import About from '@/pages/about';
@@ -37,6 +38,7 @@ function AppRouter() {
       <Route path="/tools/railcut-sizing" component={RailcutSizing} />
       <Route path="/tools/capacity-planner" component={CapacityPlanner} />
       <Route path="/tools/project-list" component={ProjectList} />
+      <Route path="/tools/parts-catalog" component={PartsCatalog} />
       <Route path="/tools/inventory" component={Inventory} />
       <Route path="/tools/stock-booking" component={StockBooking} />
       <Route path="/about" component={About} />
