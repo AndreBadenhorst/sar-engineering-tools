@@ -9,8 +9,9 @@
 1. **EHB Railcut Power Section Sizing** — Physics simulation for monorail carrier current draw and fuse trip assessment
 2. **Capacity Planner** — Weekly team allocation grid with night shift, holidays, export, changelog
 3. **Projects** — Project list with financial tracking (imported from Excel)
-4. **Inventory** — Parts catalog with multi-location stock levels
-5. **Book Stock** — Book-in/out transaction interface with project attribution
+4. **Parts Catalog** — Browse/search/filter/edit parts with 4-tab detail sheet (Details, Purchasing, Pricing, Engineering). Fuzzy search with Levenshtein distance.
+5. **Inventory** — Per-project stock allocation with multi-location stock levels (NULL project_id = free stock)
+6. **Book Stock** — Book-in/out transaction interface with project attribution
 
 ---
 
@@ -49,6 +50,7 @@ client/src/
     project-list.tsx                 # Project list with financials
     inventory.tsx                    # Parts inventory
     stock-booking.tsx                # Book-in/out interface
+    parts-catalog.tsx                # Parts catalog with detail sheet
     not-found.tsx                    # 404
   components/
     layout/
@@ -67,6 +69,7 @@ client/src/
   hooks/
     use-capacity.ts                  # Capacity queries, mutations, types
     use-inventory.ts                 # Inventory queries, mutations
+    use-parts-catalog.ts             # Parts catalog queries, mutations, search
   lib/
     monorail-engine.ts               # Physics simulation engine (~560 lines)
     data/
@@ -98,6 +101,9 @@ server/
   migrate-locations.ts               # Add locations table
   migrate-holidays.ts                # Add holidays support
   migrate-job-function.ts            # Add job function field
+  migrate-parts-v2.ts                # Parts + pricing + inventory tables
+  migrate-parts-v3.ts                # ERP-standard fields (19 columns)
+  migrate-v4-procos.ts               # ProCoS alignment (13 columns)
 
 shared/
   schema.ts                          # Drizzle ORM schema (ALL tables defined here)
@@ -131,7 +137,10 @@ All tables defined in `shared/schema.ts`. Key tables:
 | inventory_levels | Stock per part per location (qtyOnHand, reorderPoint) |
 | stock_transactions | Immutable ledger (book_in/book_out/adjustment, qty, project) |
 | storage_locations | Warehouse/shelf/bin hierarchy |
-| purchase_orders + lines | PO tracking (schema ready, UI not built yet) |
+| part_prices | Customer-specific pricing per part |
+| holidays | US federal + German + company holidays |
+| locations | Work locations / job sites |
+| purchase_orders + lines | PO tracking with ProCoS-aligned statuses (draft → submitted → confirmed → partial → received → cancelled) |
 
 ### Financial values stored in cents (integer) to avoid float issues.
 
@@ -146,7 +155,12 @@ npx tsx server/migrate-changelog.ts   # Changelog table + indexes
 npx tsx server/migrate-locations.ts   # Locations table
 npx tsx server/migrate-holidays.ts    # Holidays support
 npx tsx server/migrate-job-function.ts # Job function field
+npx tsx server/migrate-parts-v2.ts    # Parts + pricing + inventory tables
+npx tsx server/migrate-parts-v3.ts    # ERP-standard fields (19 columns)
+npx tsx server/migrate-v4-procos.ts   # ProCoS alignment (13 columns)
 ```
+
+> **Note:** Migrations are additive (ALTER TABLE ADD COLUMN). Each checks for existing columns before adding. Safe to re-run.
 
 ---
 
@@ -174,6 +188,26 @@ npx tsx server/migrate-job-function.ts # Job function field
 
 ---
 
+## Parts Catalog
+
+### Table View
+Columns: Part #, Description, Type, Manufacturer, Vendor, Cost, Rev. Fuzzy search uses Levenshtein distance for typo-tolerant matching. EAN/barcode field included for ProCoS compatibility.
+
+### Detail Sheet (4 Tabs)
+- **Details** — Identification (part number, description, revision), tracking flags, inventory summary
+- **Purchasing** — Vendor, lead time, MOQ, costing information
+- **Pricing** — Customer-specific pricing with inline edit (stored in `part_prices` table)
+- **Engineering** — Drawings, weight, install times
+
+### Part Types
+`purchased`, `manufactured`, `sub_assembly`, `raw_material`, `service`, `consumable`
+
+### Data Conventions
+- Costs stored in cents (integer) — consistent with all financial values
+- EAN/barcode field for ProCoS compatibility
+
+---
+
 ## Railcut Sizing Tool — Physics Model
 
 ### Carrier Motion
@@ -196,6 +230,22 @@ npx tsx server/migrate-job-function.ts # Job function field
 
 ---
 
+## Architecture Vision
+
+SAR Tools is evolving into the operational ERP for SAR Automation LP. QuickBooks Desktop will be reduced to AR/AP bookkeeping only.
+
+**ProCoS alignment**: Schema and field naming follows SAR Germany's ProCoS ERP conventions where applicable (per-project stock allocation, Beistellung tracking, EAN numbers, PO status flow).
+
+**Controlling**: SAR has a sophisticated project cost controlling system (currently Excel) with full overrecovery/underrecovery and WIP tracking. The controlling module will eventually consume QB ledger + timecard data directly. Every operational module should produce data that can feed project cost analysis.
+
+**Planned module roadmap**:
+1. PO flow (shopping cart → purchase → receive against project)
+2. Timecard import
+3. QB ledger sync (read-only)
+4. Controlling module (replaces Excel)
+
+---
+
 ## Hard Rules
 
 1. **EXIT-FIRST departure** in Scenario 2 — rightmost carrier leaves first
@@ -210,6 +260,9 @@ npx tsx server/migrate-job-function.ts # Job function field
 10. **Projects: active-only search** in capacity planner autocomplete
 11. **Projects imported from Excel** — source field tracks origin
 12. **Dates: store YYYY-MM-DD, display MM/DD/YYYY** — US locale. All user-facing dates must be formatted MM/DD/YYYY. Database and API always use ISO YYYY-MM-DD internally.
+13. **Capacity planner is scheduling only** — it does NOT allocate costs. Actual labor costs come from timecard imports.
+14. **Per-project stock** — inventory can be allocated to projects (NULL project_id = free stock). Materials received on a PO belong to the PO's project until moved.
+15. **PO statuses follow ProCoS flow** — draft → submitted → confirmed → partial → received → cancelled
 
 ---
 
@@ -220,6 +273,7 @@ npx tsx server/migrate-job-function.ts # Job function field
 - Changelog: logged server-side on every mutation, not client-side
 - React Query: `staleTime: Infinity` by default, manual invalidation after mutations
 - Query key format: `["/api/path", "?params"]` — joined with `/` by default queryFn
+- Query keys use single strings for paths with IDs: `queryKey: [`/api/parts/${id}`]` — do NOT split into array segments as the default queryFn joins with `/` causing double-slash bugs
 
 ---
 
