@@ -125,6 +125,8 @@ export const parts = sqliteTable("parts", {
   preferredVendor: text("preferred_vendor"),            // supplier name (Wesco, McNaughton-McKay, etc.)
   manufacturer: text("manufacturer"),                  // mfr name (Siemens, Rittal, etc.)
   manufacturerPartNumber: text("manufacturer_part_number"), // raw mfr part without SAR prefix
+  // ── Identification ────────────────────────────
+  ean: text("ean"),                                    // EAN / barcode number (ProCoS: EANNR)
   // ── Classification ────────────────────────────
   partType: text("part_type", { enum: ["purchased", "manufactured", "sub_assembly", "raw_material", "service", "consumable"] }).default("purchased"),
   // ── Pricing / Costing ───────────────────────
@@ -188,11 +190,14 @@ export const storageLocations = sqliteTable("storage_locations", {
   active: integer("active", { mode: "boolean" }).notNull().default(true),
 });
 
-// ── Inventory Levels (qty per part per location) ──────────────
+// ── Inventory Levels (qty per part per location, optionally per project) ──
+// projectId = NULL means free/unallocated stock (ProCoS: "Freies Lager")
+// projectId = N means stock allocated to that project/order
 export const inventoryLevels = sqliteTable("inventory_levels", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   partId: integer("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
   locationId: integer("location_id").notNull().references(() => storageLocations.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }), // null = free stock
   qtyOnHand: integer("qty_on_hand").notNull().default(0),
   reorderPoint: integer("reorder_point"),
   reorderQty: integer("reorder_qty"),
@@ -202,18 +207,25 @@ export const inventoryLevels = sqliteTable("inventory_levels", {
 ]);
 
 // ── Stock Transactions (immutable audit log) ──────────────────
-// Every book-in/out ties to a project for cost tracking
+// Every book-in/out ties to a project for cost tracking (ProCoS: Lagerbewegungen)
 export const stockTransactions = sqliteTable("stock_transactions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   partId: integer("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
   locationId: integer("location_id").notNull().references(() => storageLocations.id, { onDelete: "cascade" }),
-  type: text("type", { enum: ["book_in", "book_out", "adjustment"] }).notNull(),
+  type: text("type", { enum: ["book_in", "book_out", "adjustment", "transfer"] }).notNull(),
   qty: integer("qty").notNull(),              // positive = in, negative = out
   reason: text("reason"),                     // "project use", "received from vendor", "cycle count"
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),       // target project
+  sourceProjectId: integer("source_project_id").references(() => projects.id, { onDelete: "set null" }), // for transfers between projects
   performedBy: integer("performed_by").references(() => teamMembers.id, { onDelete: "set null" }),
   notes: text("notes"),
   qtyAfter: integer("qty_after"),             // snapshot of stock after this transaction
+  // ── ProCoS-aligned fields ───────────────────
+  beistellung: integer("beistellung", { mode: "boolean" }).default(false), // customer-furnished material
+  deliveryNote: text("delivery_note"),        // Lieferschein reference
+  documentNumber: text("document_number"),    // Belegnummer
+  serialNumber: text("serial_number"),        // per-movement serial tracking
+  poLineId: integer("po_line_id").references(() => purchaseOrderLines.id, { onDelete: "set null" }), // links receipt to PO line
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
 });
 
@@ -222,17 +234,22 @@ export const stockTransactions = sqliteTable("stock_transactions", {
 // Schema only — routes + UI built later
 // ══════════════════════════════════════════════════════════════
 
-// ── Purchase Orders ───────────────────────────────────────────
+// ── Purchase Orders (ProCoS: Bestellungen) ───────────────────
+// Status flow: draft → submitted → confirmed → partial → received → cancelled
+// Maps to ProCoS: Disponiert → Bestellt → Bestätigt → Teilgeliefert → Geliefert → Storniert
 export const purchaseOrders = sqliteTable("purchase_orders", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   poNumber: text("po_number"),
   vendor: text("vendor"),
-  status: text("status", { enum: ["draft", "submitted", "partial", "received", "cancelled"] }).notNull().default("draft"),
+  status: text("status", { enum: ["draft", "submitted", "confirmed", "partial", "received", "cancelled"] }).notNull().default("draft"),
   requestedBy: integer("requested_by").references(() => teamMembers.id, { onDelete: "set null" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   notes: text("notes"),
   totalCost: integer("total_cost"),           // cents — sum of line costs
+  deliveryAddress: text("delivery_address"),   // Lieferadresse
   submittedAt: text("submitted_at"),
+  confirmedAt: text("confirmed_at"),           // AB+Datum — vendor confirmation date
+  expectedDelivery: text("expected_delivery"), // Lieferdatum — YYYY-MM-DD
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
 });
@@ -244,7 +261,9 @@ export const purchaseOrderLines = sqliteTable("purchase_order_lines", {
   partId: integer("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   qtyOrdered: integer("qty_ordered").notNull(),
+  qtyConfirmed: integer("qty_confirmed"),     // vendor-confirmed quantity (may differ from ordered)
   qtyReceived: integer("qty_received").notNull().default(0),
   unitCost: integer("unit_cost"),             // cents
+  expectedDelivery: text("expected_delivery"), // per-line delivery date YYYY-MM-DD
   notes: text("notes"),
 });

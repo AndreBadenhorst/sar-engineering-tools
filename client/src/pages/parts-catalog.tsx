@@ -338,6 +338,7 @@ function DetailsTab({ part }: { part: CatalogPartDetail }) {
       <dl className="space-y-2">
         <Field label="Manufacturer" value={part.manufacturer} />
         <Field label="Mfr Part #" value={part.manufacturerPartNumber} />
+        <Field label="EAN / Barcode" value={part.ean} />
         <Field label="Vendor" value={part.preferredVendor} />
         <Field label="Supplier Part #" value={part.supplierPartNumber} />
         <Field label="Unit of Measure" value={part.unitOfMeasure} />

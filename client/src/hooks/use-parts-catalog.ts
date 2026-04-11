@@ -16,6 +16,8 @@ export interface CatalogPart {
   preferredVendor: string | null;
   manufacturer: string | null;
   manufacturerPartNumber: string | null;
+  // Identification
+  ean: string | null;
   // Classification
   partType: PartType | null;
   // Costing (cents)
