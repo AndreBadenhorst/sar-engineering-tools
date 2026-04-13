@@ -125,6 +125,7 @@ export const parts = sqliteTable("parts", {
   preferredVendor: text("preferred_vendor"),            // supplier name (Wesco, McNaughton-McKay, etc.)
   manufacturer: text("manufacturer"),                  // mfr name (Siemens, Rittal, etc.)
   manufacturerPartNumber: text("manufacturer_part_number"), // raw mfr part without SAR prefix
+  manufacturerUrl: text("manufacturer_url"),               // link to manufacturer product page
   // ── Identification ────────────────────────────
   ean: text("ean"),                                    // EAN / barcode number (ProCoS: EANNR)
   // ── Classification ────────────────────────────
@@ -153,7 +154,9 @@ export const parts = sqliteTable("parts", {
   datasheetUrl: text("datasheet_url"),                 // link to spec/datasheet
   comments: text("comments"),                          // general notes
   countryOfOrigin: text("country_of_origin"),          // for customs (DE, US, CN, etc.)
-  hsCode: text("hs_code"),                             // harmonized system tariff code
+  hsCode: text("hs_code"),                             // harmonized system tariff code (international 6-digit)
+  htsCodeUs: text("hts_code_us"),                      // US Harmonized Tariff Schedule code
+  htCodeEu: text("ht_code_eu"),                        // EU Combined Nomenclature (CN) tariff code
   inspectionRequired: integer("inspection_required", { mode: "boolean" }).default(false),
   lotTracked: integer("lot_tracked", { mode: "boolean" }).default(false),
   serialTracked: integer("serial_tracked", { mode: "boolean" }).default(false),

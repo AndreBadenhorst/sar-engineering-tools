@@ -1,6 +1,5 @@
 import { Link, useLocation } from 'wouter';
-import { Home, Info, Sun, Moon } from 'lucide-react';
-import { tools } from '@/lib/tools-registry';
+import { Home, Sun, Moon, CalendarDays, FolderKanban, BookOpen, Package, ScanBarcode, ClipboardCheck, Train, FileText } from 'lucide-react';
 import { useTheme } from '@/hooks/use-theme';
 import sarLogo from '@assets/sar-group-logo-blue.png';
 import sarLogoSquare from '@assets/sar-logo-square.png';
@@ -32,6 +31,46 @@ function ThemeToggle() {
   );
 }
 
+type NavItem = { label: string; icon: typeof Home; path: string; tooltip?: string };
+
+const PLANNING: NavItem[] = [
+  { label: "Capacity", icon: CalendarDays, path: "/tools/capacity-planner" },
+  { label: "Projects", icon: FolderKanban, path: "/tools/project-list" },
+];
+
+const WAREHOUSE: NavItem[] = [
+  { label: "Parts Catalog", icon: BookOpen, path: "/tools/parts-catalog" },
+  { label: "Inventory", icon: Package, path: "/tools/inventory" },
+  { label: "Book Stock", icon: ScanBarcode, path: "/tools/stock-booking" },
+  { label: "Stocktake", icon: ClipboardCheck, path: "/tools/stocktake" },
+];
+
+const ENGINEERING: NavItem[] = [
+  { label: "Railcut Sizing", icon: Train, path: "/tools/railcut-sizing" },
+];
+
+function NavGroup({ label, items, location }: { label: string; items: NavItem[]; location: string }) {
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {items.map((item) => (
+            <SidebarMenuItem key={item.path}>
+              <SidebarMenuButton asChild isActive={location === item.path} tooltip={item.tooltip || item.label}>
+                <Link href={item.path}>
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
 export function AppSidebar() {
   const [location] = useLocation();
 
@@ -55,50 +94,33 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={location === '/'} tooltip="Home">
+                <SidebarMenuButton asChild isActive={location === '/'} tooltip="Dashboard">
                   <Link href="/">
                     <Home className="h-4 w-4" />
-                    <span>Home</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={location === '/about'} tooltip="About">
-                  <Link href="/about">
-                    <Info className="h-4 w-4" />
-                    <span>About</span>
+                    <span>Dashboard</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        <NavGroup label="Planning" items={PLANNING} location={location} />
+        <NavGroup label="Warehouse" items={WAREHOUSE} location={location} />
+        <NavGroup label="Engineering" items={ENGINEERING} location={location} />
         <SidebarGroup>
-          <SidebarGroupLabel>Tools</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {tools.map((tool) => {
-                const Icon = tool.icon;
-                const isActive = location === tool.path;
-                return (
-                  <SidebarMenuItem key={tool.id}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive}
-                      tooltip={tool.shortName}
-                    >
-                      <Link href={tool.path}>
-                        <Icon className="h-4 w-4" />
-                        <span>{tool.shortName}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={location === '/docs'} tooltip="Documentation">
+                  <Link href="/docs">
+                    <FileText className="h-4 w-4" />
+                    <span>Documentation</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

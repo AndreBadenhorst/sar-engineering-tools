@@ -79,7 +79,7 @@ export default function RailcutSizing() {
                     {params.voltage}V | {params.power_kW}kW | {params.railLength_m}m section | {params.fuseRating_A}A fuse | {params.carrierLength_mm}mm carrier | {params.speed_ms}m/s | {params.totalSystemCarriers} system carriers
                   </p>
                 </div>
-                <span className="text-xs text-gray-500">SAR Intranet - Codex</span>
+                <span className="text-xs text-gray-500">SAR Engineering Tools</span>
               </div>
             </div>
             <ResultsTable scenarios={scenarios} fuseRating={params.fuseRating_A} derived={derived} totalSystemCarriers={params.totalSystemCarriers} />

@@ -186,6 +186,13 @@ export function useInventoryLevels() {
   });
 }
 
+export function useInventoryByLocation(locationId: number | null) {
+  return useQuery<InventoryLevel[]>({
+    queryKey: ["/api/inventory/by-location", `/${locationId}`],
+    enabled: locationId != null,
+  });
+}
+
 export function useLowStock() {
   return useQuery<LowStockItem[]>({
     queryKey: ["/api/inventory/low-stock"],

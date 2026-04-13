@@ -62,7 +62,8 @@ router.get("/", async (_req: Request, res: Response) => {
     .innerJoin(parts, eq(inventoryLevels.partId, parts.id))
     .innerJoin(storageLocations, eq(inventoryLevels.locationId, storageLocations.id))
     .where(eq(parts.active, true))
-    .orderBy(parts.partNumber);
+    .orderBy(parts.partNumber)
+    .all();
 
   res.json(rows);
 });
@@ -91,7 +92,36 @@ router.get("/low-stock", async (_req: Request, res: Response) => {
         sql`${inventoryLevels.qtyOnHand} <= ${inventoryLevels.reorderPoint}`,
       ),
     )
-    .orderBy(parts.partNumber);
+    .orderBy(parts.partNumber)
+    .all();
+
+  res.json(rows);
+});
+
+router.get("/by-location/:locationId", async (req: Request, res: Response) => {
+  const parsed = positiveIdParamSchema.safeParse({ id: Number(req.params.locationId) });
+  if (!parsed.success) {
+    return sendValidationError(res, formatZodError(parsed.error));
+  }
+
+  const rows = db
+    .select({
+      id: inventoryLevels.id,
+      partId: inventoryLevels.partId,
+      partNumber: parts.partNumber,
+      partName: parts.name,
+      category: parts.category,
+      unitOfMeasure: parts.unitOfMeasure,
+      locationId: inventoryLevels.locationId,
+      locationLabel: storageLocations.label,
+      qtyOnHand: inventoryLevels.qtyOnHand,
+    })
+    .from(inventoryLevels)
+    .innerJoin(parts, eq(inventoryLevels.partId, parts.id))
+    .innerJoin(storageLocations, eq(inventoryLevels.locationId, storageLocations.id))
+    .where(and(eq(inventoryLevels.locationId, parsed.data.id), eq(parts.active, true)))
+    .orderBy(parts.partNumber)
+    .all();
 
   res.json(rows);
 });
@@ -141,7 +171,8 @@ router.get("/transactions", async (req: Request, res: Response) => {
     .leftJoin(teamMembers, eq(stockTransactions.performedBy, teamMembers.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(stockTransactions.createdAt))
-    .limit(limit);
+    .limit(limit)
+    .all();
 
   res.json(rows);
 });
@@ -165,7 +196,8 @@ router.get("/project-costs/:projectId", async (req: Request, res: Response) => {
     .innerJoin(parts, eq(stockTransactions.partId, parts.id))
     .where(eq(stockTransactions.projectId, parsed.data.id))
     .groupBy(stockTransactions.partId)
-    .orderBy(parts.partNumber);
+    .orderBy(parts.partNumber)
+    .all();
 
   res.json(rows);
 });

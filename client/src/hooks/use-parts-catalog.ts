@@ -16,6 +16,7 @@ export interface CatalogPart {
   preferredVendor: string | null;
   manufacturer: string | null;
   manufacturerPartNumber: string | null;
+  manufacturerUrl: string | null;
   // Identification
   ean: string | null;
   // Classification
@@ -45,6 +46,8 @@ export interface CatalogPart {
   comments: string | null;
   countryOfOrigin: string | null;
   hsCode: string | null;
+  htsCodeUs: string | null;
+  htCodeEu: string | null;
   // Tracking flags
   inspectionRequired: boolean;
   lotTracked: boolean;

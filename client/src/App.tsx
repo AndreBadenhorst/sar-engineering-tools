@@ -17,12 +17,15 @@ import ProjectList from '@/pages/project-list';
 import PartsCatalog from '@/pages/parts-catalog';
 import Inventory from '@/pages/inventory';
 import StockBooking from '@/pages/stock-booking';
+import Stocktake from '@/pages/stocktake';
 import About from '@/pages/about';
+import Documentation from '@/pages/documentation';
 
 function PageTitle() {
   const [location] = useLocation();
-  if (location === '/') return <AppHeader title="SAR Intranet - Codex" />;
+  if (location === '/') return <AppHeader title="SAR Engineering Tools" />;
   if (location === '/about') return <AppHeader title="About" />;
+  if (location === '/docs') return <AppHeader title="Documentation" />;
   const match = location.match(/^\/tools\/(.+)$/);
   if (match) {
     const tool = getToolById(match[1]);
@@ -41,7 +44,9 @@ function AppRouter() {
       <Route path="/tools/parts-catalog" component={PartsCatalog} />
       <Route path="/tools/inventory" component={Inventory} />
       <Route path="/tools/stock-booking" component={StockBooking} />
+      <Route path="/tools/stocktake" component={Stocktake} />
       <Route path="/about" component={About} />
+      <Route path="/docs" component={Documentation} />
       <Route component={NotFound} />
     </Switch>
   );

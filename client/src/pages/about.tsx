@@ -92,7 +92,7 @@ export default function About() {
       <div>
         <h2 className="text-3xl font-bold tracking-tight">About</h2>
         <p className="text-muted-foreground mt-1">
-          SAR Intranet - Codex - internal platform for SAR Automation LP
+          SAR Engineering Tools - internal platform for SAR Automation LP
         </p>
         <p className="text-xs text-muted-foreground/60 mt-1">Built by Badenhorst Inc.</p>
       </div>

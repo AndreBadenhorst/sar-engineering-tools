@@ -4,7 +4,6 @@ import { apiRequest } from "@/lib/queryClient";
 import type { Project } from "@/hooks/use-capacity";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -20,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Filter, X, Loader2, DollarSign, AlertTriangle } from "lucide-react";
+import { Search, Filter, X, Loader2 } from "lucide-react";
 
 /** Format cents to dollar string */
 function fmtMoney(cents: number | null): string {
@@ -46,7 +45,6 @@ export default function ProjectList() {
   const [jobStatusFilter, setJobStatusFilter] = useState("");
   const [jobTypeFilter, setJobTypeFilter] = useState("");
   const [repFilter, setRepFilter] = useState("");
-  const [balanceFilter, setBalanceFilter] = useState<"all" | "outstanding" | "zero">("all");
 
   const { data: projects, isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -102,13 +100,10 @@ export default function ProjectList() {
     if (jobTypeFilter) list = list.filter((p) => p.jobType === jobTypeFilter);
     if (repFilter) list = list.filter((p) => p.rep === repFilter);
 
-    if (balanceFilter === "outstanding") list = list.filter((p) => p.balance && p.balance > 0);
-    else if (balanceFilter === "zero") list = list.filter((p) => !p.balance || p.balance === 0);
-
     return list;
-  }, [projects, search, statusFilter, jobStatusFilter, jobTypeFilter, repFilter, balanceFilter]);
+  }, [projects, search, statusFilter, jobStatusFilter, jobTypeFilter, repFilter]);
 
-  const hasFilters = search || statusFilter !== "all" || jobStatusFilter || jobTypeFilter || repFilter || balanceFilter !== "all";
+  const hasFilters = search || statusFilter !== "all" || jobStatusFilter || jobTypeFilter || repFilter;
 
   function clearFilters() {
     setSearch("");
@@ -116,52 +111,14 @@ export default function ProjectList() {
     setJobStatusFilter("");
     setJobTypeFilter("");
     setRepFilter("");
-    setBalanceFilter("all");
   }
 
   // Summary stats
   const activeCount = projects?.filter((p) => p.active).length ?? 0;
   const totalCount = projects?.length ?? 0;
-  const totalBalance = useMemo(() => {
-    if (!filtered) return 0;
-    return filtered.reduce((sum, p) => sum + (p.balance || 0), 0);
-  }, [filtered]);
-  const totalEstimate = useMemo(() => {
-    if (!filtered) return 0;
-    return filtered.reduce((sum, p) => sum + (p.estimateTotal || 0), 0);
-  }, [filtered]);
-  const outstandingCount = filtered.filter((p) => p.balance && p.balance > 0).length;
 
   return (
-    <div className="p-4 space-y-4">
-      {/* Summary cards */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Badge variant="secondary" className="text-xs">
-          {activeCount} active
-        </Badge>
-        <Badge variant="outline" className="text-xs">
-          {totalCount} total
-        </Badge>
-        {totalBalance > 0 && (
-          <Badge variant="destructive" className="text-xs gap-1">
-            <DollarSign className="h-3 w-3" />
-            {fmtMoney(totalBalance)} outstanding
-          </Badge>
-        )}
-        {totalEstimate > 0 && (
-          <Badge variant="outline" className="text-xs gap-1">
-            <DollarSign className="h-3 w-3" />
-            {fmtMoney(totalEstimate)} estimated
-          </Badge>
-        )}
-        {outstandingCount > 0 && (
-          <Badge variant="outline" className="text-xs gap-1 border-yellow-600 text-yellow-500">
-            <AlertTriangle className="h-3 w-3" />
-            {outstandingCount} with balance
-          </Badge>
-        )}
-      </div>
-
+    <div className="p-4 space-y-3">
       {/* Filters */}
       <div className="flex items-center gap-2 flex-wrap">
         <Filter className="h-4 w-4 text-muted-foreground" />
@@ -223,24 +180,14 @@ export default function ProjectList() {
             </SelectContent>
           </Select>
         )}
-        <Select value={balanceFilter} onValueChange={(v) => setBalanceFilter(v as any)}>
-          <SelectTrigger className="h-8 w-[120px] text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Balances</SelectItem>
-            <SelectItem value="outstanding">Outstanding</SelectItem>
-            <SelectItem value="zero">Paid / Zero</SelectItem>
-          </SelectContent>
-        </Select>
         {hasFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 px-2">
             <X className="h-3 w-3 mr-1" />
             Clear
           </Button>
         )}
-        <span className="text-xs text-muted-foreground">
-          {filtered.length} shown
+        <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">
+          {filtered.length} of {totalCount} · {activeCount} active
         </span>
       </div>
 
@@ -261,7 +208,6 @@ export default function ProjectList() {
                 <TableHead className="w-[50px]">Rep</TableHead>
                 <TableHead className="w-[90px]">Job Status</TableHead>
                 <TableHead className="w-[110px] text-right">Estimate</TableHead>
-                <TableHead className="w-[110px] text-right">Balance</TableHead>
                 <TableHead className="w-[80px]">Start</TableHead>
                 <TableHead className="w-[80px]">Proj. End</TableHead>
                 <TableHead className="w-[80px]">End</TableHead>
@@ -271,7 +217,7 @@ export default function ProjectList() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={12} className="text-center py-10 text-muted-foreground">
+                  <TableCell colSpan={11} className="text-center py-10 text-muted-foreground">
                     No projects found
                   </TableCell>
                 </TableRow>
@@ -279,50 +225,26 @@ export default function ProjectList() {
                 filtered.map((p) => (
                   <TableRow key={p.id} className={!p.active ? "opacity-50" : undefined}>
                     <TableCell className="sticky left-0 bg-background z-10">
-                      <Button
-                        variant={p.active ? "default" : "outline"}
-                        size="sm"
-                        className="h-6 text-xs px-2"
+                      <button
+                        className={`text-xs font-medium px-1.5 py-0.5 rounded ${p.active ? "text-emerald-600 bg-emerald-500/10" : "text-muted-foreground bg-muted"}`}
                         onClick={() => toggleActive.mutate({ id: p.id, active: !p.active })}
                         disabled={toggleActive.isPending}
                       >
                         {p.active ? "Active" : "Inactive"}
-                      </Button>
+                      </button>
                     </TableCell>
                     <TableCell className="font-mono text-sm">{p.number}</TableCell>
                     <TableCell className="max-w-[200px] truncate">{p.customer || "—"}</TableCell>
                     <TableCell className="max-w-[300px] truncate">{p.description || "—"}</TableCell>
                     <TableCell>{p.rep || "—"}</TableCell>
-                    <TableCell>
-                      {p.jobStatus ? (
-                        <Badge
-                          variant={
-                            p.jobStatus === "In progress" ? "default" :
-                            p.jobStatus === "Finished" ? "secondary" :
-                            "destructive"
-                          }
-                          className="text-xs"
-                        >
-                          {p.jobStatus}
-                        </Badge>
-                      ) : "—"}
-                    </TableCell>
+                    <TableCell className="text-xs">{p.jobStatus || "—"}</TableCell>
                     <TableCell className="text-right font-mono text-sm">
                       {fmtMoney(p.estimateTotal)}
-                    </TableCell>
-                    <TableCell className={`text-right font-mono text-sm ${p.balance && p.balance > 0 ? "text-red-400 font-semibold" : ""}`}>
-                      {fmtMoney(p.balance)}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{fmtDate(p.startDate)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{fmtDate(p.projectedEnd)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{fmtDate(p.endDate)}</TableCell>
-                    <TableCell>
-                      {p.jobType ? (
-                        <Badge variant={p.jobType === "Open" ? "outline" : "secondary"} className="text-xs">
-                          {p.jobType}
-                        </Badge>
-                      ) : "—"}
-                    </TableCell>
+                    <TableCell className="text-xs">{p.jobType || "—"}</TableCell>
                   </TableRow>
                 ))
               )}

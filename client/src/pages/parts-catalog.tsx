@@ -12,7 +12,6 @@ import {
 } from "@/hooks/use-parts-catalog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -219,11 +218,7 @@ export default function PartsCatalog() {
                     <TableCell>
                       <div className="truncate max-w-[400px]">{p.name}</div>
                     </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {partTypeLabel(p.partType)}
-                      </Badge>
-                    </TableCell>
+                    <TableCell className="text-xs">{partTypeLabel(p.partType)}</TableCell>
                     <TableCell className="text-sm">{p.manufacturer || "—"}</TableCell>
                     <TableCell className="text-sm">{p.preferredVendor || "—"}</TableCell>
                     <TableCell className="text-right font-mono text-sm">
@@ -272,10 +267,11 @@ function PartDetailSheet({
               <p className="text-sm text-muted-foreground leading-snug">{part.name}</p>
             </SheetHeader>
 
-            <div className="flex items-center gap-2 mt-3 mb-1">
-              <Badge variant="secondary" className="text-xs">{partTypeLabel(part.partType)}</Badge>
-              {part.revision && <Badge variant="outline" className="text-xs font-mono">Rev {part.revision}</Badge>}
-              <Badge variant="outline" className="text-xs">{part.source === "calc_sheet" ? "Sheet" : part.source}</Badge>
+            <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+              <span>{partTypeLabel(part.partType)}</span>
+              {part.revision && <><span className="text-border">|</span><span className="font-mono">Rev {part.revision}</span></>}
+              <span className="text-border">|</span>
+              <span>{part.source === "calc_sheet" ? "Calc Sheet" : part.source}</span>
             </div>
 
             <Tabs defaultValue="details" className="mt-3">
@@ -338,6 +334,17 @@ function DetailsTab({ part }: { part: CatalogPartDetail }) {
       <dl className="space-y-2">
         <Field label="Manufacturer" value={part.manufacturer} />
         <Field label="Mfr Part #" value={part.manufacturerPartNumber} />
+        {part.manufacturerUrl && (
+          <div className="flex items-center gap-2 pl-0">
+            <dt className="text-xs text-muted-foreground shrink-0 w-32">Mfr Website</dt>
+            <dd className="text-sm">
+              <a href={part.manufacturerUrl} target="_blank" rel="noopener noreferrer"
+                className="text-primary hover:underline inline-flex items-center gap-1">
+                <ExternalLink className="h-3 w-3" /> Open
+              </a>
+            </dd>
+          </div>
+        )}
         <Field label="EAN / Barcode" value={part.ean} />
         <Field label="Vendor" value={part.preferredVendor} />
         <Field label="Supplier Part #" value={part.supplierPartNumber} />
@@ -346,7 +353,9 @@ function DetailsTab({ part }: { part: CatalogPartDetail }) {
         <Field label="Description" value={part.description} />
         <Field label="Comments" value={part.comments} />
         <Field label="Country of Origin" value={part.countryOfOrigin} />
-        <Field label="HS / Tariff Code" value={part.hsCode} />
+        <Field label="HS Code (Intl)" value={part.hsCode} />
+        <Field label="HTS Code (US)" value={part.htsCodeUs} />
+        <Field label="HT Code (EU)" value={part.htCodeEu} />
       </dl>
 
       <div className="border-t pt-2 mt-2">

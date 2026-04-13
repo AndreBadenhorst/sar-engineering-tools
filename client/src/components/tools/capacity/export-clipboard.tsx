@@ -178,7 +178,7 @@ function generateHTML(
 export function ExportClipboard({ weekStarts, entries, teamMembers, activities, holidays }: ExportClipboardProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [weekdaysOnly, setWeekdaysOnly] = useState(true);
+  const [weekdaysOnly, setWeekdaysOnly] = useState(false);
   const [selectedMembers, setSelectedMembers] = useState<Set<number>>(
     () => new Set(teamMembers.map((m) => m.id))
   );

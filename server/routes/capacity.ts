@@ -279,13 +279,15 @@ router.get("/", async (req: Request, res: Response) => {
     .leftJoin(projects, eq(capacityEntries.projectId, projects.id))
     .leftJoin(activities, eq(capacityEntries.activityId, activities.id))
     .leftJoin(locations, eq(capacityEntries.locationId, locations.id))
-    .where(and(gte(capacityEntries.date, weekStart), lte(capacityEntries.date, weekEnd)));
+    .where(and(gte(capacityEntries.date, weekStart), lte(capacityEntries.date, weekEnd)))
+    .all();
 
   const members = db
     .select()
     .from(teamMembers)
     .where(eq(teamMembers.active, true))
-    .orderBy(teamMembers.name);
+    .orderBy(teamMembers.name)
+    .all();
 
   res.json({ weekStart, weekEnd, entries, teamMembers: members });
 });

@@ -9,7 +9,6 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -123,20 +122,16 @@ export default function StockBooking() {
   return (
     <div className="p-4 max-w-lg mx-auto space-y-4">
       {/* Progress indicator */}
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1 text-xs">
         {["Search", "Select", "Details", "Book Out", "Done"].map((label, i) => {
           const stepIdx = ["search", "select", "confirm-part", "book-out", "done"].indexOf(step);
+          const active = i <= stepIdx;
           return (
             <div key={label} className="flex items-center gap-1">
-              <div
-                className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-medium ${
-                  i <= stepIdx ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {i < stepIdx ? <Check className="h-3 w-3" /> : i + 1}
-              </div>
-              <span className={i <= stepIdx ? "text-foreground" : ""}>{label}</span>
-              {i < 4 && <div className="w-4 h-px bg-border" />}
+              <span className={active ? "text-foreground font-medium" : "text-muted-foreground"}>
+                {i + 1}. {label}
+              </span>
+              {i < 4 && <span className="text-muted-foreground/50 mx-0.5">/</span>}
             </div>
           );
         })}
@@ -246,7 +241,7 @@ export default function StockBooking() {
               <div className="font-mono font-medium">{booking.part.partNumber}</div>
               <div className="text-lg">{booking.part.name}</div>
               {booking.part.description && <div className="text-sm text-muted-foreground">{booking.part.description}</div>}
-              {booking.part.preferredVendor && <Badge variant="outline" className="text-xs">{booking.part.preferredVendor}</Badge>}
+              {booking.part.preferredVendor && <div className="text-xs text-muted-foreground mt-0.5">Vendor: {booking.part.preferredVendor}</div>}
             </div>
 
             {/* Inventory levels at each location */}
@@ -468,7 +463,7 @@ function PartButton({ part, onClick }: { part: Part; onClick: () => void }) {
     >
       <div className="flex items-center justify-between">
         <span className="font-mono font-medium text-sm">{part.partNumber}</span>
-        {part.category && <Badge variant="outline" className="text-xs">{part.category}</Badge>}
+        {part.category && <span className="text-xs text-muted-foreground">{part.category}</span>}
       </div>
       <div className="text-sm">{part.name}</div>
       {part.description && <div className="text-xs text-muted-foreground truncate">{part.description}</div>}

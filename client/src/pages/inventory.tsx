@@ -195,7 +195,7 @@ function PartsTab() {
                     <TableCell>{p.category || "—"}</TableCell>
                     <TableCell>{p.preferredVendor || "—"}</TableCell>
                     <TableCell>{p.unitOfMeasure || "EA"}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-xs">{p.source}</Badge></TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{p.source}</TableCell>
                   </TableRow>
                 ))
               )}
@@ -355,11 +355,11 @@ function StockLevelsTab() {
                       <TableCell>{l.locationLabel || `${l.warehouse} / ${l.shelf || ""} / ${l.bin || ""}`}</TableCell>
                       <TableCell className="text-right font-medium">{l.qtyOnHand}</TableCell>
                       <TableCell className="text-right">{l.reorderPoint ?? "—"}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-xs font-medium">
                         {isLow ? (
-                          <Badge variant="destructive" className="text-xs">Low</Badge>
+                          <span className="text-destructive">Low</span>
                         ) : (
-                          <Badge variant="secondary" className="text-xs">OK</Badge>
+                          <span className="text-muted-foreground">OK</span>
                         )}
                       </TableCell>
                     </TableRow>

@@ -5,11 +5,13 @@ server/public
 vite.config.ts.*
 *.tar.gz
 
-# Database (rebuild from seeds)
+# Database — live files excluded, snapshots tracked
 data/*.db
 data/*.db-wal
 data/*.db-shm
-data/backups/
+!data/backups/
+data/backups/*.db-wal
+data/backups/*.db-shm
 
 # Drizzle migrations
 drizzle/

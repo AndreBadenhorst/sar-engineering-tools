@@ -1,4 +1,4 @@
-import { Train, Calculator, Zap, Cable, CalendarDays, FolderKanban, Package, ScanBarcode, BookOpen } from "lucide-react";
+import { Train, Calculator, Zap, Cable, CalendarDays, FolderKanban, Package, ScanBarcode, BookOpen, ClipboardCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface ToolDefinition {
@@ -70,6 +70,16 @@ export const tools: ToolDefinition[] = [
     description: 'Mobile-friendly tool — book parts out of inventory, confirm shelf counts, and get low-stock reorder alerts.',
     icon: ScanBarcode,
     path: '/tools/stock-booking',
+    category: 'general',
+    status: 'active',
+  },
+  {
+    id: 'stocktake',
+    name: 'Stocktake',
+    shortName: 'Stocktake',
+    description: 'Mobile-friendly cycle count tool — walk locations, count parts, submit adjustments.',
+    icon: ClipboardCheck,
+    path: '/tools/stocktake',
     category: 'general',
     status: 'active',
   },
